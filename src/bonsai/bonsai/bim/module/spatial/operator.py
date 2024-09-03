@@ -76,7 +76,7 @@ class DereferenceStructure(bpy.types.Operator, tool.Ifc.Operator):
 class AssignContainer(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.assign_container"
     bl_label = "Assign Container"
-    bl_description = "Assign current default container to the selected objects"
+    bl_description = "Assign the selected objects to the selected container"
     bl_options = {"REGISTER", "UNDO"}
     container: bpy.props.IntProperty(options={"SKIP_SAVE"})
 
@@ -263,6 +263,17 @@ class ToggleContainerElement(bpy.types.Operator):
     def execute(self, context):
         core.toggle_container_element(tool.Spatial, element_index=self.element_index, is_recursive=self.is_recursive)
         return {"FINISHED"}
+
+
+class SelectDecomposedElement(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.select_decomposed_element"
+    bl_label = "Select Decomposed Element"
+    bl_options = {"REGISTER", "UNDO"}
+    element: bpy.props.IntProperty()
+
+    def _execute(self, context):
+        if self.element:
+            core.select_decomposed_element(tool.Ifc, tool.Spatial, element=tool.Ifc.get().by_id(self.element))
 
 
 class SelectDecomposedElements(bpy.types.Operator, tool.Ifc.Operator):
