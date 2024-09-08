@@ -167,9 +167,9 @@ echo.
 cd "%DEPS_DIR%"
 
 :: VERSIONS
-set HDF5_VERSION=1.8.22
-set HDF5_VERSION_MAJOR=1.8
-set OCCT_VERSION=7.7.2
+set HDF5_VERSION=1.12.1
+set HDF5_VERSION_MAJOR=1.12
+set OCCT_VERSION=7.7.1
 :: NOTE If updating the default Python version, change PY_VER_MAJOR_MINOR accordingly in run-cmake.bat
 set PYTHON_VERSION=3.11.7
 
@@ -265,7 +265,7 @@ powershell -c "get-content %~dp0patches\mpfr.patch | %%{$_ -replace \"sdk\",\"%U
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 if NOT "%USE_STATIC_RUNTIME%"=="FALSE" git apply "%~dp0patches\mpfr_runtime.patch" --unidiff-zero --ignore-whitespace
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-if "%VS_VER%"=="2017" (
+if "%VS_VER%" LEQ "2017" (
   set mpfr_sln=build.vc15
   set orig_platform_toolset=v141
 ) else (
