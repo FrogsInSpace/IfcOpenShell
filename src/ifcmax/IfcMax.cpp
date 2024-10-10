@@ -259,12 +259,26 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 	const char* fn_mb = name;
 #endif
 
-	IfcParse::IfcFile file(fn_mb);
+    IfcParse::IfcFile file(fn_mb);
 
-	IfcGeom::Iterator iterator(settings, &file);
+	IfcParse::file_open_status status = file.good();
+
+	if (status != IfcParse::file_open_status::SUCCESS) {
+        const MCHAR* reason = status == IfcParse::file_open_status::UNSUPPORTED_SCHEMA 
+										? _M("Import aborted: unsupported IFC Schema") 
+										: _M("Import aborted: failure parsing IFC file");
+
+        itfc->DisplayTempPrompt( reason, 10000 );
+        //MaxSDK::MaxMessageBox(itfc->GetMAXHWnd(), reason, _M("IFC Import aborted"), MB_OK);
+        return false;
+    }
+
+    IfcGeom::Iterator iterator(settings, &file);
 
     delete[] fn_mb;
-	if (!iterator.initialize())	return false;
+
+    if (!iterator.initialize()) 
+		return false;
 
 	itfc->ProgressStart(_T("Importing file..."), TRUE, fn, NULL);
 
@@ -275,7 +289,10 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 
 	do{
 		const IfcGeom::Element* element = static_cast<const IfcGeom::Element*>(iterator.get());
-		const IfcGeom::TriangulationElement* o = static_cast<const IfcGeom::TriangulationElement*>(iterator.get());
+		const IfcGeom::TriangulationElement* triElement = static_cast<const IfcGeom::TriangulationElement*>(iterator.get());
+
+		const IfcGeom::BRepElement* brepElement = static_cast<const IfcGeom::BRepElement*>(iterator.get_native());
+
 
 		const TSTR e_type = TSTR::FromUTF8(element->type().c_str());
 		const TSTR e_guid = TSTR::FromUTF8(element->guid().c_str());
@@ -285,24 +302,24 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 
 		const TSTR e_idStr = TSTR( std::to_wstring(e_id).c_str());
 
-		Mtl *mat = ComposeMultiMaterial(material_cache, mats, itfc, slot, o->geometry().materials(), o->type(), o->geometry().material_ids());
+		Mtl *mat = ComposeMultiMaterial(material_cache, mats, itfc, slot, triElement->geometry().materials(), triElement->type(), triElement->geometry().material_ids());
 
 		TriObject* tri = CreateNewTriObject();
 
-		const int numVerts = (int)o->geometry().verts().size()/3;
+		const int numVerts = (int)triElement->geometry().verts().size()/3;
 		tri->mesh.setNumVerts(numVerts);
 		for( int i = 0; i < numVerts; i ++ ) {
-			tri->mesh.setVert(i,o->geometry().verts()[3*i+0],o->geometry().verts()[3*i+1],o->geometry().verts()[3*i+2]);
+			tri->mesh.setVert(i,triElement->geometry().verts()[3*i+0],triElement->geometry().verts()[3*i+1],triElement->geometry().verts()[3*i+2]);
 		}
-		const int numFaces = (int)o->geometry().faces().size()/3;
+		const int numFaces = (int)triElement->geometry().faces().size()/3;
 		tri->mesh.setNumFaces(numFaces);
 
-		bool needs_default = std::find(o->geometry().material_ids().begin(), o->geometry().material_ids().end(), -1) != o->geometry().material_ids().end();
+		bool needs_default = std::find(triElement->geometry().material_ids().begin(), triElement->geometry().material_ids().end(), -1) != triElement->geometry().material_ids().end();
 
 		typedef std::pair<int, int> edge_t;
 
 		std::set<edge_t> face_boundaries;
-		for(std::vector<int>::const_iterator it = o->geometry().edges().begin(); it != o->geometry().edges().end();) {
+		for(std::vector<int>::const_iterator it = triElement->geometry().edges().begin(); it != triElement->geometry().edges().end();) {
 			const int v1 = *it++;
 			const int v2 = *it++;
 
@@ -311,9 +328,10 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 		}
 
 		for( int i = 0; i < numFaces; i ++ ) {
-			const int v1 = o->geometry().faces()[3*i+0];
-			const int v2 = o->geometry().faces()[3*i+1];
-			const int v3 = o->geometry().faces()[3*i+2];
+			const int v1 = triElement->geometry().faces()[3*i+0];
+			const int v2 = triElement->geometry().faces()[3*i+1]; 
+
+			const int v3 = triElement->geometry().faces()[3*i+2];
 			
 			const edge_t e1((std::min)(v1, v2), (std::max)(v1, v2));
 			const edge_t e2((std::min)(v2, v3), (std::max)(v2, v3));
@@ -326,7 +344,7 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 			tri->mesh.faces[i].setVerts(v1, v2, v3);
 			tri->mesh.faces[i].setEdgeVisFlags(b1, b2, b3);
 
-			MtlID mtlid = (MtlID)o->geometry().material_ids()[i];
+			MtlID mtlid = (MtlID)triElement->geometry().material_ids()[i];
 			if (needs_default) {
 				mtlid ++;
 			}
@@ -351,7 +369,7 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 
 		node->SetName(longName);
 
-		node->GetINode()->Hide(o->type() == "IfcOpeningElement" || o->type() == "IfcSpace");
+		node->GetINode()->Hide(triElement->type() == "IfcOpeningElement" || triElement->type() == "IfcSpace");
 		if (mat) {
 			node->GetINode()->SetMtl(mat);
 
@@ -359,7 +377,7 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 			node->GetINode()->SetWireColor(mat->GetDiffuse().toRGB());
 		}
 
-		const auto &mtx = o->transformation().data()->ccomponents();
+		const auto &mtx = triElement->transformation().data()->ccomponents();
 
 		node->SetTransform(0,Matrix3(  
 			Point3(mtx(0,0), mtx(1,0), mtx(2,0)),
