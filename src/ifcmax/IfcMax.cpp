@@ -25,9 +25,9 @@
 
 #include "IfcMax.h"
 
-#include "../ifcgeom_schema_agnostic/IfcGeomIterator.h"
-#include "../ifcgeom_schema_agnostic/IfcGeomMaterial.h"
-#include "../ifcgeom/IfcGeomElement.h"
+#include "../ifcgeom/Iterator.h"
+#include "../ifcgeom/taxonomy.h"
+#include "../ifcgeom/ConversionSettings.h"
 
 static const int NUM_MATERIAL_SLOTS = 24;
 
@@ -46,6 +46,11 @@ public:
     void *                  Create(BOOL /*loading = FALSE*/) { return new IFCImp; }
     // TODO Delete() function?
     const TCHAR *			ClassName() { return _T("IFCImp"); }
+
+#if MAX_VERSION_MAJOR >= 24
+	const TCHAR *	NonLocalizedClassName() { return ClassName(); }
+#endif 
+
     SClass_ID               SuperClassID() { return SCENE_IMPORT_CLASS_ID; }
     Class_ID                ClassID() { return Class_ID(0x3f230dbf, 0x5b3015c2); }
     const TCHAR*			Category() { return _T("Chrutilities"); }
@@ -132,27 +137,32 @@ static Mtl* FindMaterialByName(MtlBaseLib* library, const std::string& material_
 	return m;
 }
 
-static Mtl* FindOrCreateMaterial(MtlBaseLib* library, Interface* max_interface, int& slot, const IfcGeom::Material& material) {
-	Mtl* m = FindMaterialByName(library, material.name());
+
+static Mtl* FindOrCreateMaterial(MtlBaseLib* library, Interface* max_interface, int& slot, const ifcopenshell::geometry::taxonomy::style::ptr styleptr) {
+
+	auto& style = *styleptr;
+    std::string material_name = style.name;
+
+	Mtl* m = FindMaterialByName(library, material_name);
 	if (m == 0) {
 		StdMat2* stdm = NewDefaultStdMat();
 		const TimeValue t = -1;
-		if (material.hasDiffuse()) {
-			const double* diffuse = material.diffuse();
-			stdm->SetDiffuse(Color(diffuse[0], diffuse[1], diffuse[2]),t);
+		if (style.diffuse) {
+            const ifcopenshell::geometry::taxonomy::colour diffuse = style.diffuse;
+			stdm->SetDiffuse(Color(diffuse.r(), diffuse.g(), diffuse.b()),t);
 		}
-		if (material.hasSpecular()) {
-			const double* specular = material.specular();
-			stdm->SetSpecular(Color(specular[0], specular[1], specular[2]),t);
+		if (style.specular) {
+            const ifcopenshell::geometry::taxonomy::colour specular = style.specular;
+			stdm->SetSpecular(Color(specular.r(), specular.g(), specular.b()),t);
 		}
-		if (material.hasSpecularity()) {
-			stdm->SetShininess((float)material.specularity(), t);
+		if (style.has_specularity()) {
+			stdm->SetShininess((float)style.specularity, t);
 		}
-		if (material.hasTransparency()) {
-			stdm->SetOpacity(1.0f - (float)material.transparency(), t);
+		if (style.has_transparency()) {
+			stdm->SetOpacity(1.0f - (float)style.transparency, t);
 		}
 		m = stdm;
-		m->SetName(S(material.name()));
+		m->SetName(S(material_name));
 		library->Add(m);
 		if (slot < NUM_MATERIAL_SLOTS) {
 			max_interface->PutMtlToMtlEditor(m,slot++);
@@ -161,18 +171,22 @@ static Mtl* FindOrCreateMaterial(MtlBaseLib* library, Interface* max_interface, 
 	return m;
 }
 
+
 static Mtl* ComposeMultiMaterial(std::map<std::vector<std::string>, Mtl*>& multi_mats, MtlBaseLib* library,
-    Interface* max_interface, int& slot, const std::vector<IfcGeom::Material>& materials,
+    Interface* max_interface, int& slot, const std::vector<ifcopenshell::geometry::taxonomy::style::ptr> styleptrs,
     const std::string& object_type, const std::vector<int>& material_ids)
 {
 	std::vector<std::string> material_names;
 	bool needs_default = std::find(material_ids.begin(), material_ids.end(), -1) != material_ids.end();
+
 	if (needs_default) {
 		material_names.push_back(object_type);
 	}
-	for (auto it = materials.begin(); it != materials.end(); ++it) {
-		material_names.push_back(it->name());
+
+	for (auto it = styleptrs.begin(); it != styleptrs.end(); ++it) {		
+		material_names.push_back( (*it)->name);
 	}
+
 	Mtl* default_material = 0;
 	if (needs_default) {
 		default_material = FindMaterialByName(library, object_type);
@@ -185,13 +199,15 @@ static Mtl* ComposeMultiMaterial(std::map<std::vector<std::string>, Mtl*>& multi
 			}
 		}
 	}
+
 	if (material_names.size() == 1) {
 		if (needs_default) {
 			return default_material;
 		} else {
-			return FindOrCreateMaterial(library, max_interface, slot, *materials.begin());
+			return FindOrCreateMaterial(library, max_interface, slot, *styleptrs.begin());
 		}
 	}
+
 	std::map<std::vector<std::string>, Mtl*>::const_iterator i = multi_mats.find(material_names);
 	if (i != multi_mats.end()) {
 		return i->second;
@@ -202,7 +218,7 @@ static Mtl* ComposeMultiMaterial(std::map<std::vector<std::string>, Mtl*>& multi
 	if (needs_default) {
 		multi_mat->SetSubMtlAndName(mtl_id ++, default_material, default_material->GetName());
 	}
-	for (auto it = materials.begin(); it != materials.end(); ++it) {
+	for (auto it = styleptrs.begin(); it != styleptrs.end(); ++it) {
 		Mtl* mtl = FindOrCreateMaterial(library, max_interface, slot, *it);
 		multi_mat->SetSubMtl(mtl_id ++, mtl);
 	}
@@ -216,10 +232,24 @@ static Mtl* ComposeMultiMaterial(std::map<std::vector<std::string>, Mtl*>& multi
 
 int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, BOOL /*suppressPrompts*/) {
 
-	IfcGeom::IteratorSettings settings;
-    settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, false);
-    settings.set(IfcGeom::IteratorSettings::WELD_VERTICES, true);
-    settings.set(IfcGeom::IteratorSettings::SEW_SHELLS, true);
+	ifcopenshell::geometry::Settings settings;
+    settings.get<ifcopenshell::geometry::settings::UseWorldCoords>().value = false;
+    settings.get<ifcopenshell::geometry::settings::WeldVertices>().value = true;
+    
+	// JW: is this a SEW_SHELLS/SewShells() equivalent ?
+	// SewShells=true seems to have set GV_MAX_FACES_TO_ORIENT to infinity 
+	settings.get<ifcopenshell::geometry::settings::ReorientShells>().value = true;
+
+	// some settings which seem to make sense
+	settings.get<ifcopenshell::geometry::settings::BuildingLocalPlacement>().value = true;
+	settings.get<ifcopenshell::geometry::settings::DontEmitNormals>().value = true;
+	//settings.get<ifcopenshell::geometry::settings::UseMaterialNames>().value = true;
+	
+	// enabling this crashes the iterator
+	//settings.get<ifcopenshell::geometry::settings::UseElementHierarchy>().value = true;
+	
+	settings.get<ifcopenshell::geometry::settings::CircleSegments>().value = 32; // default is 16
+	settings.get<ifcopenshell::geometry::settings::OutputDimensionality>().value = ifcopenshell::geometry::settings::CURVES_SURFACES_AND_SOLIDS; // default is SURFACES_AND_SOLIDS
 
 #ifdef _UNICODE
 	int fn_buffer_size = WideCharToMultiByte(CP_UTF8, 0, name, -1, 0, 0, 0, 0);
@@ -229,10 +259,26 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 	const char* fn_mb = name;
 #endif
 
-	IfcParse::IfcFile file(fn_mb);
-	IfcGeom::Iterator<float> iterator(settings, &file);
-    delete fn_mb;
-	if (!iterator.initialize()) return false;
+    IfcParse::IfcFile file(fn_mb);
+
+	IfcParse::file_open_status status = file.good();
+
+	if (status != IfcParse::file_open_status::SUCCESS) {
+        const MCHAR* reason = status == IfcParse::file_open_status::UNSUPPORTED_SCHEMA 
+										? _M("Import aborted: unsupported IFC Schema") 
+										: _M("Import aborted: failure parsing IFC file");
+
+        itfc->DisplayTempPrompt( reason, 10000 );
+        //MaxSDK::MaxMessageBox(itfc->GetMAXHWnd(), reason, _M("IFC Import aborted"), MB_OK);
+        return false;
+    }
+
+    IfcGeom::Iterator iterator(settings, &file);
+
+    delete[] fn_mb;
+
+    if (!iterator.initialize()) 
+		return false;
 
 	itfc->ProgressStart(_T("Importing file..."), TRUE, fn, NULL);
 
@@ -242,29 +288,38 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 	std::map<std::vector<std::string>, Mtl*> material_cache;
 
 	do{
-		const IfcGeom::TriangulationElement<float>* o = static_cast<const IfcGeom::TriangulationElement<float>*>(iterator.get());
+		const IfcGeom::Element* element = static_cast<const IfcGeom::Element*>(iterator.get());
+		const IfcGeom::TriangulationElement* triElement = static_cast<const IfcGeom::TriangulationElement*>(iterator.get());
 
-		TSTR o_type = S(o->type());
-		TSTR o_guid = S(o->guid());
+		const IfcGeom::BRepElement* brepElement = static_cast<const IfcGeom::BRepElement*>(iterator.get_native());
 
-		Mtl *m = ComposeMultiMaterial(material_cache, mats, itfc, slot, o->geometry().materials(), o->type(), o->geometry().material_ids());
+
+		const TSTR e_type = TSTR::FromUTF8(element->type().c_str());
+		const TSTR e_guid = TSTR::FromUTF8(element->guid().c_str());
+		const TSTR e_name = TSTR::FromUTF8(element->name().c_str());
+
+		int e_id = element->id();
+
+		const TSTR e_idStr = TSTR( std::to_wstring(e_id).c_str());
+
+		Mtl *mat = ComposeMultiMaterial(material_cache, mats, itfc, slot, triElement->geometry().materials(), triElement->type(), triElement->geometry().material_ids());
 
 		TriObject* tri = CreateNewTriObject();
 
-		const int numVerts = (int)o->geometry().verts().size()/3;
+		const int numVerts = (int)triElement->geometry().verts().size()/3;
 		tri->mesh.setNumVerts(numVerts);
 		for( int i = 0; i < numVerts; i ++ ) {
-			tri->mesh.setVert(i,o->geometry().verts()[3*i+0],o->geometry().verts()[3*i+1],o->geometry().verts()[3*i+2]);
+			tri->mesh.setVert(i,triElement->geometry().verts()[3*i+0],triElement->geometry().verts()[3*i+1],triElement->geometry().verts()[3*i+2]);
 		}
-		const int numFaces = (int)o->geometry().faces().size()/3;
+		const int numFaces = (int)triElement->geometry().faces().size()/3;
 		tri->mesh.setNumFaces(numFaces);
 
-		bool needs_default = std::find(o->geometry().material_ids().begin(), o->geometry().material_ids().end(), -1) != o->geometry().material_ids().end();
+		bool needs_default = std::find(triElement->geometry().material_ids().begin(), triElement->geometry().material_ids().end(), -1) != triElement->geometry().material_ids().end();
 
 		typedef std::pair<int, int> edge_t;
 
 		std::set<edge_t> face_boundaries;
-		for(std::vector<int>::const_iterator it = o->geometry().edges().begin(); it != o->geometry().edges().end();) {
+		for(std::vector<int>::const_iterator it = triElement->geometry().edges().begin(); it != triElement->geometry().edges().end();) {
 			const int v1 = *it++;
 			const int v2 = *it++;
 
@@ -273,9 +328,10 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 		}
 
 		for( int i = 0; i < numFaces; i ++ ) {
-			const int v1 = o->geometry().faces()[3*i+0];
-			const int v2 = o->geometry().faces()[3*i+1];
-			const int v3 = o->geometry().faces()[3*i+2];
+			const int v1 = triElement->geometry().faces()[3*i+0];
+			const int v2 = triElement->geometry().faces()[3*i+1]; 
+
+			const int v3 = triElement->geometry().faces()[3*i+2];
 			
 			const edge_t e1((std::min)(v1, v2), (std::max)(v1, v2));
 			const edge_t e2((std::min)(v2, v3), (std::max)(v2, v3));
@@ -288,7 +344,7 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 			tri->mesh.faces[i].setVerts(v1, v2, v3);
 			tri->mesh.faces[i].setEdgeVisFlags(b1, b2, b3);
 
-			MtlID mtlid = (MtlID)o->geometry().material_ids()[i];
+			MtlID mtlid = (MtlID)triElement->geometry().material_ids()[i];
 			if (needs_default) {
 				mtlid ++;
 			}
@@ -306,15 +362,30 @@ int IFCImp::DoImport(const TCHAR *name, ImpInterface *impitfc, Interface *itfc, 
 		tri->mesh.InvalidateGeomCache();
 
 		ImpNode* node = impitfc->CreateNode();
+
 		node->Reference(tri);
-		node->SetName(o_guid);
-		node->GetINode()->Hide(o->type() == "IfcOpeningElement" || o->type() == "IfcSpace");
-		if (m) {
-			node->GetINode()->SetMtl(m);
+		
+		const TSTR longName = e_type + _T("/") + e_name + _T("/#") + e_idStr;
+
+		node->SetName(longName);
+
+		node->GetINode()->Hide(triElement->type() == "IfcOpeningElement" || triElement->type() == "IfcSpace");
+		if (mat) {
+			node->GetINode()->SetMtl(mat);
+
+			// set wirecolor to material color
+			node->GetINode()->SetWireColor(mat->GetDiffuse().toRGB());
 		}
-		const std::vector<float>& matrix_data = o->transformation().matrix().data();
-		node->SetTransform(0,Matrix3 ( Point3(matrix_data[0],matrix_data[1],matrix_data[2]),Point3(matrix_data[3],matrix_data[4],matrix_data[5]),
-			Point3(matrix_data[6],matrix_data[7],matrix_data[8]),Point3(matrix_data[9],matrix_data[10],matrix_data[11]) ));
+
+		const auto &mtx = triElement->transformation().data()->ccomponents();
+
+		node->SetTransform(0,Matrix3(  
+			Point3(mtx(0,0), mtx(1,0), mtx(2,0)),
+			Point3(mtx(0,1), mtx(1,1), mtx(2,1)),
+			Point3(mtx(0,2), mtx(1,2), mtx(2,2)),
+			Point3(mtx(0,3), mtx(1,3), mtx(2,3))
+		));
+
 		impitfc->AddNodeToScene(node);
 
 		itfc->ProgressUpdate(iterator.progress(), true, _T(""));
