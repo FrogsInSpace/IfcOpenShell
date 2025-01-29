@@ -197,7 +197,7 @@ IF "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
 
 :proj
 
-IF EXIST "%INSTALL_DIR%\proj-9.2.1" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\proj-9.2.1" (
     echo Found existing "%INSTALL_DIR%\proj-9.2.1", skipping
     goto :mpir
 )
@@ -238,7 +238,7 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 :mpir
 
-IF EXIST "%INSTALL_DIR%\mpir" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\mpir" (
     echo Found existing "%INSTALL_DIR%\mpir", skipping
     goto :mpfr
 )
@@ -267,7 +267,7 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 :mpfr
 
-IF EXIST "%INSTALL_DIR%\mpfr" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\mpfr" (
     echo Found existing "%INSTALL_DIR%\mpfr", skipping
     goto :HDF5
 )
@@ -306,7 +306,7 @@ cd "%DEPENDENCY_DIR%"
 set HDF5_CMAKE_ZIP=CMake-hdf5-%HDF5_VERSION%.zip
 set HDF5_INSTALL_ZIP_NAME=HDF5-%HDF5_VERSION%-win%ARCH_BITS%
 
-IF EXIST "%INSTALL_DIR%\%HDF5_INSTALL_ZIP_NAME%" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\%HDF5_INSTALL_ZIP_NAME%" (
     echo Found existing "%INSTALL_DIR%\%HDF5_INSTALL_ZIP_NAME%", skipping
     goto :Boost
 )
@@ -377,7 +377,7 @@ set DEPENDENCY_DIR=%DEPS_DIR%\OpenCOLLADA
 :: Use a fixed revision in order to prevent introducing breaking changes
 call :GitCloneAndCheckoutRevision https://github.com/KhronosGroup/OpenCOLLADA.git "%DEPENDENCY_DIR%" 064a60b65c2c31b94f013820856bc84fb1937cc6
 
-IF EXIST "%INSTALL_DIR%\OpenCOLLADA" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\OpenCOLLADA" (
     echo Found existing "%INSTALL_DIR%\OpenCOLLADA", skipping
     :: we do need to clone though because the bundled libxml includes are not installed
     goto :OCCT
@@ -406,7 +406,7 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 SET OCCT_VER=V%OCCT_VERSION:.=_%
 
-IF EXIST "%INSTALL_DIR%\opencascade-%OCCT_VERSION%" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\opencascade-%OCCT_VERSION%" (
     echo Found existing "%INSTALL_DIR%\opencascade-%OCCT_VERSION%", skipping
     goto :Python
 )
@@ -509,7 +509,7 @@ IF "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
 
 :SWIG
 
-IF EXIST "%INSTALL_DIR%\swigwin" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\swigwin" (
     echo Found existing "%INSTALL_DIR%\swigwin", skipping
     goto :cgal
 )
@@ -532,7 +532,7 @@ IF EXIST "%DEPS_DIR%\swigwin\". robocopy "%DEPS_DIR%\swigwin" "%INSTALL_DIR%\swi
 
 :cgal
 
-IF EXIST "%INSTALL_DIR%\cgal" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\cgal" (
     echo Found existing "%INSTALL_DIR%\cgal", skipping
     goto :Eigen
 )
