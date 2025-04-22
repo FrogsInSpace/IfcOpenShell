@@ -40,6 +40,7 @@ scenarios("feature")
 
 variables = {
     "cwd": Path.cwd().as_posix(),
+    "ifc_dir": os.path.join(Path.cwd().as_posix(), "test", "files", "temp"),
     "ifc": "tool.Ifc.get()",
     "pset_ifc": "IfcStore.pset_template_file",
     "classification_ifc": "IfcStore.classification_file",
@@ -405,6 +406,7 @@ def the_name_list_has_total_items(name, total):
 
 @given(parsers.parse('I select the "{item_name}" item in the "{list_name}" list'))
 @when(parsers.parse('I select the "{item_name}" item in the "{list_name}" list'))
+@then(parsers.parse('I can select the "{item_name}" item in the "{list_name}" list'))
 def i_select_the_item_name_item_in_the_list_name_list(item_name, list_name):
     assert panel_spy
     panel_spy.refresh_spy()
@@ -668,6 +670,12 @@ def the_object_name_is_selected(name):
 def then_the_object_name_is_selected(name):
     obj = the_object_name_exists(name)
     assert obj in bpy.context.selected_objects
+
+
+@then(parsers.parse('the object "{name}" is not selected'))
+def then_the_object_name_is_not_selected(name):
+    obj = the_object_name_exists(name)
+    assert obj not in bpy.context.selected_objects
 
 
 @given(parsers.parse('the object "{name}" is rotated by "{rotation_deg}" deg'))
@@ -1256,7 +1264,7 @@ def the_object_name_is_at_location(name, location):
     obj_location = the_object_name_exists(name).location
     assert (
         obj_location - Vector([float(co) for co in location.split(",")])
-    ).length < 0.1, f"Object is at {obj_location} instead of {location}"
+    ).length < 0.05, f"Object is at {obj_location} instead of {location}"
 
 
 @then(parsers.parse('the object "{name}" has a vertex at "{location}"'))
@@ -1297,7 +1305,7 @@ def the_object_name_top_right_corner_is_at_location(name, location):
     obj_corner = obj.matrix_world @ Vector(obj.bound_box[6])
     assert (
         obj_corner - Vector([float(co) for co in location.split(",")])
-    ).length < 0.1, f"Object has top right corner {obj_corner} instead of {location}"
+    ).length < 0.05, f"Object has top right corner {obj_corner} instead of {location}"
 
 
 @then(parsers.parse('the object "{name}" bottom left corner is at "{location}"'))
@@ -1306,7 +1314,7 @@ def the_object_name_bottom_left_corner_is_at_location(name, location):
     obj_corner = obj.matrix_world @ Vector(obj.bound_box[0])
     assert (
         obj_corner - Vector([float(co) for co in location.split(",")])
-    ).length < 0.1, f"Object has bottom left corner {obj_corner} instead of {location}"
+    ).length < 0.05, f"Object has bottom left corner {obj_corner} instead of {location}"
 
 
 @then(parsers.parse('the object "{name}" is contained in "{container_name}"'))
@@ -1354,7 +1362,16 @@ def the_object_name_has_no_aggregate(name: str) -> None:
 def the_file_name_should_contain_value(name, value):
     name = replace_variables(name)
     with open(name, "r") as f:
-        assert value in f.read()
+        content = f.read()
+        assert value in content, f"File {name} does not contain {value}:\n{content}"
+
+
+@then(parsers.parse('the file "{name}" should not contain "{value}"'))
+def the_file_name_should_contain_value(name, value):
+    name = replace_variables(name)
+    with open(name, "r") as f:
+        content = f.read()
+        assert value not in content, f"File {name} contains {value}:\n{content}"
 
 
 @then(parsers.parse('the object "{name}" has no modifiers'))
@@ -1487,7 +1504,7 @@ def the_obj1_and_obj2_belong_the_same_linked_aggregate_group(obj_name1, obj_name
 
 
 @when(parsers.parse('the object layer length is set to "{value}"'))
-def the_obj_layer_lenght_is_set_to(value):
+def the_obj_layer_length_is_set_to(value):
     value = float(value)
     try:
         eval("bpy.context.scene.BIMModelProperties.length")

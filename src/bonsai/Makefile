@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
+SHELL := sh
 PYTHON:=python3.11
 PIP:=pip3.11
 PATCH:=patch
@@ -86,7 +87,7 @@ BLENDER_PLATFORM:=windows-x64
 endif
 
 # Current build commit hash.
-OLD:=c49ca69
+OLD:=2db6b86
 .PHONY: bump
 bump:
 ifndef NEW

@@ -975,6 +975,14 @@ class OverrideDuplicateMove(bpy.types.Operator):
 
     @staticmethod
     def execute_ifc_duplicate_operator(self, context, linked=False):
+        for obj in context.selected_objects:
+            if element := tool.Ifc.get_entity(obj):
+                if element.is_a("IfcAnnotation") and element.ObjectType == "DRAWING":
+                    tool.Blender.deselect_object(obj)
+                    self.report({"ERROR"}, "Drawing not duplicated.")
+                elif tool.Geometry.is_locked(element):
+                    tool.Blender.deselect_object(obj)
+                    self.report({"ERROR"}, lock_error_message(obj.name))
         old_to_new, new_active_obj = tool.Geometry.duplicate_ifc_objects(
             set(context.selected_objects), linked=linked, active_object=context.active_object
         )
@@ -3063,20 +3071,21 @@ class OverrideMove(bpy.types.Operator):
             element = tool.Ifc.get_entity(obj)
             if not element or not element.is_a("IfcElement"):
                 continue
-            parts = ifcopenshell.util.element.get_parts(element)
-            if parts:
+
+            if parts := ifcopenshell.util.element.get_parts(element):
                 aggregates_to_move.append(tool.Ifc.get_object(element))
                 aggregates_to_move.extend(list(tool.Aggregate.get_parts_recursively(element)))
                 continue
 
             # Controls the aggregate level it should consider to move
-            aggregates = tool.Aggregate.get_aggregates_recursively(element)
-            aggregate = aggregates[-1]
-            if props.in_aggregate_mode:
-                current_aggregate_index = aggregates.index(tool.Ifc.get_entity(props.editing_aggregate))
-                aggregate = aggregates[current_aggregate_index - 1]
-                if tool.Ifc.get_entity(props.editing_aggregate) == aggregates[0]:
-                    aggregate = aggregates[0]
+            aggregate = None
+            if aggregates := tool.Aggregate.get_aggregates_recursively(element):
+                aggregate = aggregates[-1]
+                if props.in_aggregate_mode:
+                    current_aggregate_index = aggregates.index(tool.Ifc.get_entity(props.editing_aggregate))
+                    aggregate = aggregates[current_aggregate_index - 1]
+                    if tool.Ifc.get_entity(props.editing_aggregate) == aggregates[0]:
+                        aggregate = aggregates[0]
 
             if not parts and props.in_aggregate_mode and aggregate == tool.Ifc.get_entity(props.editing_aggregate):
                 continue
