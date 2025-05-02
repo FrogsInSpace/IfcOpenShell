@@ -45,6 +45,18 @@ if(HAS_MAX)
 	include_directories(${INCLUDE_DIRECTORIES} ${OCC_INCLUDE_DIR} ${OPENCOLLADA_INCLUDE_DIRS} ${ICU_INCLUDE_DIR} ${Boost_INCLUDE_DIRS} )
 	link_directories(${LINK_DIRECTORIES} ${IfcOpenShell_BINARY_DIR} ${OCC_LIBRARY_DIR} ${OPENCOLLADA_LIBRARY_DIR} ${ICU_LIBRARY_DIR} ${Boost_LIBRARY_DIRS} )
 
+	# Specify individual source files
+	set(MAX_SOURCES
+		IfcMax.h
+		IfcMax.cpp
+		IfcMax.rc
+		resource.h
+		IfcHelper.h
+		IfcHelper.cpp
+		# MaxUtils.h
+		# MaxUtils.cpp
+	)
+
     # build library for each found 3ds Max SDK
     foreach(max_year max_sdk IN ZIP_LISTS FOUND_MAX_YEARS FOUND_MAX_SDKS)
 
@@ -55,8 +67,8 @@ if(HAS_MAX)
 
         message(STATUS "Adding build target: IFCMax for 3ds Max SDK ${max_year}")
 
-        add_library(IfcMax_${max_year} SHARED IfcMax.h IfcMax.cpp)
-
+        add_library(IfcMax_${max_year} SHARED  ${MAX_SOURCES})
+		
 		target_include_directories(IfcMax_${max_year} PRIVATE ${max_sdk}/include)
 		
 		# All recent versions of 3ds Max (2014 and newer) are 64-bit only so assume lib/x64 directory
@@ -123,6 +135,11 @@ if(HAS_MAX)
 		
         set_target_properties(IfcMax_${max_year} PROPERTIES SUFFIX ".dli")
 		
+		if(NOT "${BUILD_TIER_NAME}" STREQUAL "")
+			# For the moment we always build the free tier, see IfcMax.cpp for the preprocessor #define conditional
+			target_compile_definitions(IfcMax_${max_year} PRIVATE BUILD_FREE_TIER)
+			set_target_properties(IfcMax_${max_year} PROPERTIES OUTPUT_NAME "IfcMax_${BUILD_TIER_NAME}_${max_year}")
+		endif()
 		
         install(TARGETS IfcMax_${max_year} RUNTIME DESTINATION ${BINDIR})
 		
