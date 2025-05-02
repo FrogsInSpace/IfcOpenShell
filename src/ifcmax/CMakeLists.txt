@@ -51,8 +51,8 @@ if(HAS_MAX)
 		IfcMax.cpp
 		IfcMax.rc
 		resource.h
-		IfcHelper.h
-		IfcHelper.cpp
+		# IfcHelper.h
+		# IfcHelper.cpp
 		# MaxUtils.h
 		# MaxUtils.cpp
 	)
