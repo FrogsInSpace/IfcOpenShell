@@ -149,11 +149,19 @@ static void LogToListener(const MCHAR* format, ...)
 
 	va_end(args);
 
+#if BUILD_FREE_TIER
+	if(result < 0) {
+		the_listener->edit_stream->printf(_M("IfcImp (Free): Skipped invalid log output !\n"));
+		return;
+	}
+	the_listener->edit_stream->printf(_M("IfcImp (Free): %s"), buffer);
+#else
 	if(result < 0) {
 		the_listener->edit_stream->printf(_M("IfcImp: Skipped invalid log output !\n"));
 		return;
 	}
 	the_listener->edit_stream->printf(_M("IfcImp: %s"), buffer);
+#endif
 }
 
 
