@@ -338,7 +338,8 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
     auto annotations = file.instances_by_type("IfcAnnotation");
     auto solids = file.instances_by_type("IfcSolidModel");
 
-    IfcGeom::Iterator iterator(settings, &file);
+	// previous "opencascade"
+    IfcGeom::Iterator iterator( "hybrid-cgal-simple-opencascade", settings, &file);
     
     delete[] fn_mb;
 
