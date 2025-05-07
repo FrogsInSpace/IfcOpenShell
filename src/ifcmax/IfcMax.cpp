@@ -300,10 +300,10 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
 
 	// some settings which seem to make sense
 	settings.get<ifcopenshell::geometry::settings::UseElementHierarchy>().value = true;
-	settings.get<ifcopenshell::geometry::settings::BuildingLocalPlacement>().value = false;  // should be true
+	settings.get<ifcopenshell::geometry::settings::BuildingLocalPlacement>().value = true;  // should be true
 
 	// ATTENTION: breaks hierarchy positioning when active ( "site-local-placement" )
-	settings.get<ifcopenshell::geometry::settings::SiteLocalPlacement>().value = true;      // should be FALSE
+	settings.get<ifcopenshell::geometry::settings::SiteLocalPlacement>().value = false;      // should be FALSE
 
 
 	settings.get<ifcopenshell::geometry::settings::DontEmitNormals>().value = false;
