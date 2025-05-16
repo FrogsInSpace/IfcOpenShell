@@ -42,7 +42,6 @@ class IFCImp : public SceneImport {
     inline Point3 IFCImp::Point3ByIndex(const std::vector<double>& verts, int index);
     void BuildFullName(const IfcUtil::IfcBaseEntity& entity, MSTR& long_name);
     TriObject* BuildMesh(const IfcGeom::TriangulationElement* triElement);
-    SplineShape* BuildSplineShape(const IfcGeom::TriangulationElement* triElement);
 };
 
 #endif

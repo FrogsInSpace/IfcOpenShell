@@ -543,38 +543,6 @@ TriObject* IFCImp::BuildMesh(const IfcGeom::TriangulationElement* element) {
 	return tri;
 }
 
-
-SplineShape* IFCImp::BuildSplineShape(const IfcGeom::TriangulationElement* element) {
-
-	if (element == nullptr)
-        return nullptr;
-
-    SplineShape* splineShape = static_cast<SplineShape*>(CreateInstance(SHAPE_CLASS_ID, Class_ID(SPLINESHAPE_CLASS_ID, 0)));
-    splineShape->shape.NewShape();
-
-    Spline3D* spline = splineShape->shape.NewSpline(KTYPE_CORNER, KTYPE_CORNER); 
-
-	const auto& verts = element->geometry().verts();
-
-	const int numKnots = verts.size() / 3;
-    
-    for (int i = 0; i < numKnots; i++) {
-        auto knot = Point3ByIndex( verts, i);
-        spline->AddKnot(SplineKnot(KTYPE_CORNER, LTYPE_LINE, knot, knot, knot ));
-    }
-
-	bool shouldClose = Point3ByIndex(verts, 0) == Point3ByIndex(verts, numKnots - 1);
-
-	spline->SetClosed(shouldClose);         
-    spline->ComputeBezPoints();
-
-    // important, otherwise Max might crash when editing the spline!
-    splineShape->shape.UpdateSels(); 
-    splineShape->InvalidateGeomCache();
-
-	return splineShape;
-}
-
 inline Point3 IFCImp::Point3ByIndex(const std::vector<double>& verts, int index) {
 	return Point3(verts[3 * index + 0], verts[3 * index + 1], verts[3 * index + 2]);
 }
