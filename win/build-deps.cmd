@@ -113,13 +113,24 @@ if "%CMAKE_VERSION%" LSS "cmake version 3.11.4" (
     goto :ErrorAndPrintUsage
 )
 
+:: VERSIONS
+set HDF5_VERSION=1.12.1
+set HDF5_VERSION_MAJOR=1.12
+set OCCT_VERSION=7.8.1
+set CGAL_VERSION=5.6.x-branch
+:: NOTE If updating the default Python version, change PY_VER_MAJOR_MINOR accordingly in run-cmake.bat
+set PYTHON_VERSION=3.11.7
+set JSON_VERSION=3.6.1
+
+:: NOTE Should be v1.6.68, but that caused problems with LIBXML2
+set OPENCOLLADA_VERSION=064a60b65c2c31b94f013820856bc84fb1937cc6
+
 :: NOTE Boost < 1.64 doesn't work without tricks if the user has only VS 2017 installed and no earlier versions.
 set BOOST_VERSION=1.86.0
 :: Version string with underscores instead of dots.
 set BOOST_VER=%BOOST_VERSION:.=_%
 
 :: Print build configuration information
-
 call cecho.cmd 0 10 "Script configuration:"
 call cecho.cmd 0 13 "* CMake Generator`t= '`"%GENERATOR%`'`t
 echo   - Passed to CMake -G option.
@@ -165,13 +176,6 @@ set BUILD_STARTED=TRUE
 echo.
 
 cd "%DEPS_DIR%"
-
-:: VERSIONS
-set HDF5_VERSION=1.8.22
-set HDF5_VERSION_MAJOR=1.8
-set OCCT_VERSION=7.8.1
-:: NOTE If updating the default Python version, change PY_VER_MAJOR_MINOR accordingly in run-cmake.bat
-set PYTHON_VERSION=3.11.7
 
 :: VERSION DERIVATIONS
 set OCC_INCLUDE_DIR=%INSTALL_DIR%\opencascade-%OCCT_VERSION%\inc>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
@@ -367,15 +371,15 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 :JSON
 set DEPENDENCY_NAME=JSON for Modern C++ v3.6.1
 IF NOT EXIST "%INSTALL_DIR%\json\nlohmann". mkdir "%INSTALL_DIR%\json\nlohmann"
-call :DownloadFile https://github.com/nlohmann/json/releases/download/v3.6.1/json.hpp "%INSTALL_DIR%\json\nlohmann" json.hpp
+call :DownloadFile https://github.com/nlohmann/json/releases/download/v%JSON_VERSION%/json.hpp "%INSTALL_DIR%\json\nlohmann" json.hpp
 
 :OpenCOLLADA
 
 :: Note OpenCOLLADA has only Release and Debug builds.
 set DEPENDENCY_NAME=OpenCOLLADA
 set DEPENDENCY_DIR=%DEPS_DIR%\OpenCOLLADA
-:: Use a fixed revision in order to prevent introducing breaking changes
-call :GitCloneAndCheckoutRevision https://github.com/KhronosGroup/OpenCOLLADA.git "%DEPENDENCY_DIR%" 064a60b65c2c31b94f013820856bc84fb1937cc6
+:: Use a fixed revision in order to prevent introducing breaking changes							 
+call :GitCloneAndCheckoutRevision https://github.com/KhronosGroup/OpenCOLLADA.git "%DEPENDENCY_DIR%" %OPENCOLLADA_VERSION%
 
 IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\OpenCOLLADA" (
     echo Found existing "%INSTALL_DIR%\OpenCOLLADA", skipping
@@ -539,7 +543,7 @@ IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\cgal" (
 
 set DEPENDENCY_NAME=cgal
 set DEPENDENCY_DIR=%DEPS_DIR%\cgal
-call :GitCloneAndCheckoutRevision https://github.com/CGAL/cgal.git "%DEPENDENCY_DIR%" v5.5.5
+call :GitCloneAndCheckoutRevision https://github.com/CGAL/cgal.git "%DEPENDENCY_DIR%" %CGAL_VERSION%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 cd "%DEPENDENCY_DIR%"
 git reset --hard
