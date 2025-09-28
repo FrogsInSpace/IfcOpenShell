@@ -29,6 +29,7 @@
 #include "../ifcgeom/Iterator.h"
 #include "../ifcgeom/taxonomy.h"
 #include "../ifcgeom/ConversionSettings.h"
+#include "../ifcgeom/hybrid_kernel.h"
 
 #include "resource.h"
 #include "IfcMax.h"
@@ -339,8 +340,10 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
     auto solids = file.instances_by_type("IfcSolidModel");
 
 	// previous "opencascade"
-    IfcGeom::Iterator iterator( "hybrid-cgal-simple-opencascade", settings, &file);
+    //IfcGeom::Iterator iterator( "hybrid-cgal-simple-opencascade", settings, &file);
     
+    IfcGeom::Iterator iterator(ifcopenshell::geometry::kernels::construct(&file, "hybrid-cgal-simple-opencascade", settings), settings, &file);
+
     delete[] fn_mb;
 
 	LogToListener(_M("Importing '%s'...\n"), file_name);
