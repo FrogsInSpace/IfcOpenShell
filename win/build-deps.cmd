@@ -123,8 +123,8 @@ if "%CMAKE_VERSION%" LSS "cmake version 3.11.4" (
 
 :: BEGIN JW added
 set JSON_VERSION=3.6.1
-set CGAL_VERSION=v5.6.3
-REM set CGAL_VERSION=v5.5.5
+REM set CGAL_VERSION=v5.6.3
+set CGAL_VERSION=v5.5.5
 
 :: NOTE Should be v1.6.68, but that caused problems with LIBXML2
 set OPENCOLLADA_VERSION=064a60b65c2c31b94f013820856bc84fb1937cc6
