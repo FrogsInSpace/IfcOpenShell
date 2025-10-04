@@ -344,6 +344,11 @@ PIC = "-fPIC" if BUILD_STATIC else ""
 if any(f.startswith("py-") for f in flags):
     PYTHON_VERSIONS = [pyv for pyv in PYTHON_VERSIONS if f"py-{''.join(pyv.split('.')[:2])}" in flags]
 
+if any(f.startswith("occt-") for f in flags):
+    OCCT_VERSION = next(f.split('-', 1)[1] for f in flags if f.startswith("occt-"))
+
+print(OCCT_VERSION)
+
 if explicit_targets:
     targets = {dep for target in explicit_targets for dep in gather_dependencies(target)}
 else:
@@ -882,6 +887,9 @@ if USE_OCCT and "occ" in targets:
 
     if OCCT_VERSION == "7.8.1":
         patches.append("./patches/occt/no_ExpToCasExe_7_8_1.patch")
+
+    if OCCT_VERSION == "7.9.1":
+        patches.append("./patches/occt/no_ExpToCasExe_7_9_1.patch")
 
     if "wasm" in flags:
         patches.append("./patches/occt/no_em_js.patch")
