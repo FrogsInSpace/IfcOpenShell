@@ -187,7 +187,8 @@ cd "%DEPS_DIR%"
 :: VERSIONS
 :: Don't use HDF5 1.13.0, because it has a broken cmake package path.
 set HDF5_VERSION=1_13_1
-set OCCT_VERSION=7.8.1
+REM set OCCT_VERSION=7.8.1
+set OCCT_VERSION=7.9.1
 :: NOTE If updating the default Python version, change PY_VER_MAJOR_MINOR accordingly in run-cmake.bat
 set PYTHON_VERSION=%PYTHON_VERSION%
 
