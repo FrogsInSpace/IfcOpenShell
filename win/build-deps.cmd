@@ -121,13 +121,21 @@ if "%CMAKE_VERSION%" LSS "cmake version 3.11.4" (
     goto :ErrorAndPrintUsage
 )
 
+:: BEGIN JW added
+set JSON_VERSION=3.6.1
+REM set CGAL_VERSION=v5.6.3
+set CGAL_VERSION=v5.5.5
+
+:: NOTE Should be v1.6.68, but that caused problems with LIBXML2
+set OPENCOLLADA_VERSION=064a60b65c2c31b94f013820856bc84fb1937cc6
+:: END JW added
+
 :: NOTE Boost < 1.64 doesn't work without tricks if the user has only VS 2017 installed and no earlier versions.
 set BOOST_VERSION=1.86.0
 :: Version string with underscores instead of dots.
 set BOOST_VER=%BOOST_VERSION:.=_%
 
 :: Print build configuration information
-
 call cecho.cmd 0 10 "Script configuration:"
 call cecho.cmd 0 13 "* CMake Generator`t= '`"%GENERATOR%`'`t
 echo   - Passed to CMake -G option.
@@ -179,7 +187,8 @@ cd "%DEPS_DIR%"
 :: VERSIONS
 :: Don't use HDF5 1.13.0, because it has a broken cmake package path.
 set HDF5_VERSION=1_13_1
-set OCCT_VERSION=7.8.1
+REM set OCCT_VERSION=7.8.1
+set OCCT_VERSION=7.9.1
 :: NOTE If updating the default Python version, change PY_VER_MAJOR_MINOR accordingly in run-cmake.bat
 set PYTHON_VERSION=%PYTHON_VERSION%
 
@@ -207,7 +216,7 @@ IF "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
 
 :proj
 
-IF EXIST "%INSTALL_DIR%\proj-9.2.1" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\proj-9.2.1" (
     echo Found existing "%INSTALL_DIR%\proj-9.2.1", skipping
     goto :mpir
 )
@@ -248,7 +257,7 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 :mpir
 
-IF EXIST "%INSTALL_DIR%\mpir" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\mpir" (
     echo Found existing "%INSTALL_DIR%\mpir", skipping
     goto :mpfr
 )
@@ -277,7 +286,7 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 :mpfr
 
-IF EXIST "%INSTALL_DIR%\mpfr" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\mpfr" (
     echo Found existing "%INSTALL_DIR%\mpfr", skipping
     goto :HDF5
 )
@@ -316,7 +325,7 @@ cd "%DEPENDENCY_DIR%"
 set HDF5_CMAKE_ZIP=hdf5-%HDF5_VERSION%.zip
 set HDF5_INSTALL_NAME=HDF5-%HDF5_VERSION%-win%ARCH_BITS%
 
-IF EXIST "%INSTALL_DIR%\%HDF5_INSTALL_NAME%" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\%HDF5_INSTALL_NAME%" (
     echo Found existing "%INSTALL_DIR%\%HDF5_INSTALL_NAME%", skipping
     goto :Boost
 )
@@ -355,6 +364,7 @@ set BOOST_ZIP=boost-%BOOST_VERSION%-b2-nodocs.%ZIP_EXT%
 call :DownloadFile https://github.com/boostorg/boost/releases/download/boost-%BOOST_VERSION%/%BOOST_ZIP% "%DEPS_DIR%" %BOOST_ZIP%
 
 IF NOT %ERRORLEVEL%==0 GOTO :Error
+cd %DEPS_DIR%
 call :ExtractArchive %BOOST_ZIP% "%DEPS_DIR%" %DEPENDENCY_DIR%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 
@@ -385,7 +395,7 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 :JSON
 set DEPENDENCY_NAME=JSON for Modern C++ v3.6.1
 IF NOT EXIST "%INSTALL_DIR%\json\nlohmann". mkdir "%INSTALL_DIR%\json\nlohmann"
-call :DownloadFile https://github.com/nlohmann/json/releases/download/v3.6.1/json.hpp "%INSTALL_DIR%\json\nlohmann" json.hpp
+call :DownloadFile https://github.com/nlohmann/json/releases/download/v%JSON_VERSION%/json.hpp "%INSTALL_DIR%\json\nlohmann" json.hpp
 
 :OpenCOLLADA
 
@@ -393,10 +403,10 @@ call :DownloadFile https://github.com/nlohmann/json/releases/download/v3.6.1/jso
 set DEPENDENCY_NAME=OpenCOLLADA
 set DEPENDENCY_DIR=%DEPS_DIR%\OpenCOLLADA
 :: Always clone it, even if it's installed, because it contains xml headers we need.
-:: Use a fixed revision in order to prevent introducing breaking changes
-call :GitCloneAndCheckoutRevision https://github.com/KhronosGroup/OpenCOLLADA.git "%DEPENDENCY_DIR%" 064a60b65c2c31b94f013820856bc84fb1937cc6
+:: Use a fixed revision in order to prevent introducing breaking changes							 
+call :GitCloneAndCheckoutRevision https://github.com/KhronosGroup/OpenCOLLADA.git "%DEPENDENCY_DIR%" %OPENCOLLADA_VERSION%
 
-IF EXIST "%INSTALL_DIR%\OpenCOLLADA" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\OpenCOLLADA" (
     echo Found existing "%INSTALL_DIR%\OpenCOLLADA", skipping
     :: we do need to clone though because the bundled libxml includes are not installed
     goto :OCCT
@@ -425,7 +435,7 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 SET OCCT_VER=V%OCCT_VERSION:.=_%
 
-IF EXIST "%INSTALL_DIR%\opencascade-%OCCT_VERSION%" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\opencascade-%OCCT_VERSION%" (
     echo Found existing "%INSTALL_DIR%\opencascade-%OCCT_VERSION%", skipping
     goto :Python
 )
@@ -534,7 +544,7 @@ IF "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
 
 :SWIG
 
-IF EXIST "%INSTALL_DIR%\swigwin" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\swigwin" (
     echo Found existing "%INSTALL_DIR%\swigwin", skipping
     goto :cgal
 )
@@ -574,14 +584,14 @@ robocopy "%INSTALL_DIR%\swigwin\bin" "%INSTALL_DIR%\swigwin" /move /e
 
 :cgal
 
-IF EXIST "%INSTALL_DIR%\cgal" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\cgal" (
     echo Found existing "%INSTALL_DIR%\cgal", skipping
     goto :Eigen
 )
 
 set DEPENDENCY_NAME=cgal
 set DEPENDENCY_DIR=%DEPS_DIR%\cgal
-call :GitCloneAndCheckoutRevision https://github.com/CGAL/cgal.git "%DEPENDENCY_DIR%" v5.5.5
+call :GitCloneAndCheckoutRevision https://github.com/CGAL/cgal.git "%DEPENDENCY_DIR%" %CGAL_VERSION%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 cd "%DEPENDENCY_DIR%"
 git reset --hard
@@ -604,7 +614,7 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 set DEPENDENCY_NAME=Eigen
 set DEPENDENCY_DIR=%INSTALL_DIR%\%DEPENDENCY_NAME%
 
-IF EXIST "%INSTALL_DIR%\%DEPENDENCY_NAME%" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\%DEPENDENCY_NAME%" (
     echo Found existing "%INSTALL_DIR%\%DEPENDENCY_NAME%", skipping
     goto :zstd
 )
@@ -616,7 +626,7 @@ set ZSTD_VERSION=1.5.7
 set ZSTD_ZIP=zstd-%ZSTD_VERSION%.zip
 set DEPENDENCY_DIR=%DEPS_DIR%\%DEPENDENCY_NAME%-%ZSTD_VERSION%
 
-IF EXIST "%INSTALL_DIR%\%DEPENDENCY_NAME%" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\%DEPENDENCY_NAME%" (
     echo Found existing "%INSTALL_DIR%\%DEPENDENCY_NAME%", skipping
     goto :rocksdb
 )
@@ -642,7 +652,7 @@ set ROCKSDB_VERSION=9.11.2
 set ROCKSDB_ZIP=rocksdb-%ROCKSDB_VERSION%.zip
 set DEPENDENCY_DIR=%DEPS_DIR%\%DEPENDENCY_NAME%-%ROCKSDB_VERSION%
 
-IF EXIST "%INSTALL_DIR%\%DEPENDENCY_NAME%" (
+IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\%DEPENDENCY_NAME%" (
     echo Found existing "%INSTALL_DIR%\%DEPENDENCY_NAME%", skipping
     goto :Successful
 )
