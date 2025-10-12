@@ -442,6 +442,8 @@ class CreateDrawing(bpy.types.Operator):
         context.scene.render.filepath = str(Path(svg_path).with_suffix(".png"))
         assert (drawing_style := self.cprops.get_active_drawing_style())
 
+        tool.Blender.sync_render_visibility()
+
         if drawing_style.render_type == "DEFAULT":
             bpy.ops.render.render(write_still=True)
         else:
@@ -625,7 +627,7 @@ class CreateDrawing(bpy.types.Operator):
                 path.attrib["d"] = d
             group.append(g)
 
-    def generate_wall_layers(self, context: bpy.types.Context, root) -> None:
+    def generate_material_layers(self, context: bpy.types.Context, root) -> None:
         for el in root.findall(".//{http://www.w3.org/2000/svg}g[@{http://www.ifcopenshell.org/ns}guid]"):
             if "projection" in el.get("class", "").split():
                 continue
@@ -794,8 +796,9 @@ class CreateDrawing(bpy.types.Operator):
         edge_bm.to_mesh(edge_mesh)
         edge_bm.free()
 
-        actual_path = svg_path[0:-4] + "0001.svg"
+        freestyle_svg_exporter = tool.Blender.get_addon("freestyle_svg_exporter")
         context.scene.render.filepath = svg_path[0:-4]
+        actual_path = freestyle_svg_exporter.create_path(bpy.context.scene)
         bpy.ops.render.render(write_still=False)
 
         os.replace(actual_path, svg_path)
@@ -839,7 +842,8 @@ class CreateDrawing(bpy.types.Operator):
 
         if tool.Drawing.is_camera_orthographic():
             self.generate_bisect_linework(context, root)
-            self.generate_wall_layers(context, root)
+            if self.cprops.generate_material_layers:
+                self.generate_material_layers(context, root)
             self.merge_linework_and_add_metadata(root)
             self.move_elements_to_top(root)
 
@@ -937,12 +941,14 @@ class CreateDrawing(bpy.types.Operator):
         if self.cprops.cut_mode == "BISECT":
             self.remove_cut_linework(root)
             self.generate_bisect_linework(context, root)
-            self.generate_wall_layers(context, root)
+            if self.cprops.generate_material_layers:
+                self.generate_material_layers(context, root)
             self.merge_linework_and_add_metadata(root)
             self.move_elements_to_top(root)
         elif self.cprops.cut_mode == "OPENCASCADE":
             self.move_projection_to_bottom(root)
-            self.generate_wall_layers(context, root)
+            if self.cprops.generate_material_layers:
+                self.generate_material_layers(context, root)
             self.merge_linework_and_add_metadata(root)
             self.move_elements_to_top(root)
 
@@ -1348,7 +1354,7 @@ class CreateDrawing(bpy.types.Operator):
             join_criteria = join_criteria.split(",")
         else:
             # Drawing convention states that same objects classes with the same material are merged when cut.
-            join_criteria = ["class", "material.Name", "/Pset_.*Common/.Status", "EPset_Status.Status", "Material.Name"]
+            join_criteria = ["class", "material.Name", "/Pset_.*Common/.Status", "EPset_Status.Status", "EPset_Status.UserDefinedStatus"]
 
         group = root.find("{http://www.w3.org/2000/svg}g")
         joined_paths = {}
@@ -1477,11 +1483,10 @@ class CreateDrawing(bpy.types.Operator):
                 joined_paths.setdefault(hash_keys, []).append(el)
 
         for key, els in joined_paths.items():
-            polygons = []
-            classes = set()
+            queue = []
 
             for el in els:
-                classes.update(el.attrib["class"].split())
+                classes = set(el.attrib["class"].split())
                 classes.add(el.attrib["{http://www.ifcopenshell.org/ns}guid"])
                 is_closed_polygon = False
                 for path in el.findall("{http://www.w3.org/2000/svg}path"):
@@ -1496,31 +1501,30 @@ class CreateDrawing(bpy.types.Operator):
                             coords.append(coords[0])
                         if len(coords) > 2 and coords[0] == coords[-1]:
                             is_closed_polygon = True
-                            polygons.append(shapely.Polygon(coords))
+                            queue.append((shapely.Polygon(coords), classes))
                 if is_closed_polygon:
                     el.getparent().remove(el)
 
-            try:
-                merged_polygons = shapely.ops.unary_union(polygons)
-            except:
-                print("Warning. Portions of the merge failed. Please report a bug!", polygons)
-                merged_polygons = polygons
+            while queue:
+                polygon, polygon_classes = queue.pop()
+                for polygon2, polygon2_classes in queue[:]:
+                    try:
+                        merged_polygon = shapely.union(polygon, polygon2)
+                    except:
+                        print("Warning. Portions of the merge failed. Please report a bug!", polygon, polygon2)
+                        continue
+                    if type(merged_polygon) == shapely.Polygon:
+                        polygon = merged_polygon
+                        polygon_classes.update(polygon2_classes)
+                        queue.remove((polygon2, polygon2_classes))
 
-            if type(merged_polygons) == shapely.MultiPolygon:
-                merged_polygons = merged_polygons.geoms
-            elif type(merged_polygons) == shapely.Polygon:
-                merged_polygons = [merged_polygons]
-            else:
-                merged_polygons = []
-
-            for polygon in merged_polygons:
                 g = etree.Element("g")
                 path = etree.SubElement(g, "path")
                 d = "M" + " L".join([",".join([str(o) for o in co]) for co in polygon.exterior.coords[0:-1]]) + " Z"
                 for interior in polygon.interiors:
                     d += " M" + " L".join([",".join([str(o) for o in co]) for co in interior.coords[0:-1]]) + " Z"
                 path.attrib["d"] = d
-                g.set("class", " ".join(list(classes)))
+                g.set("class", " ".join(list(polygon_classes)))
                 group.append(g)
 
     def drawing_to_model_co(self, x: float, y: float) -> Vector:
@@ -2318,9 +2322,8 @@ class ActivateDrawingBase(tool.Ifc.Operator):
 
         dprops.active_drawing_id = self.drawing
         dprops.drawing_styles.clear()
-        if ifcopenshell.util.element.get_pset(drawing, "EPset_Drawing", "HasUnderlay"):
-            bpy.ops.bim.reload_drawing_styles()
-            bpy.ops.bim.activate_drawing_style()
+        bpy.ops.bim.reload_drawing_styles()
+        bpy.ops.bim.activate_drawing_style()
 
         if tool.Drawing.is_camera_orthographic():
             core.sync_references(tool.Ifc, tool.Collector, tool.Drawing, drawing=tool.Ifc.get().by_id(self.drawing))
