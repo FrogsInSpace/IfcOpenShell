@@ -122,11 +122,13 @@ if "%CMAKE_VERSION%" LSS "cmake version 3.11.4" (
 )
 
 :: BEGIN JW added
-set JSON_VERSION=3.6.1
-REM set CGAL_VERSION=v5.6.3
-set CGAL_VERSION=v5.5.5
+set JSON_VERSION=3.11.3
+set CGAL_VERSION=v5.6.3
+set EIGEN_VERSION=3.4.0
+REM set CGAL_VERSION=v5.5.5
 
 :: NOTE Should be v1.6.68, but that caused problems with LIBXML2
+REM set OPENCOLLADA_VERSION=v1.6.68
 set OPENCOLLADA_VERSION=064a60b65c2c31b94f013820856bc84fb1937cc6
 :: END JW added
 
@@ -187,8 +189,8 @@ cd "%DEPS_DIR%"
 :: VERSIONS
 :: Don't use HDF5 1.13.0, because it has a broken cmake package path.
 set HDF5_VERSION=1_13_1
-REM set OCCT_VERSION=7.8.1
-set OCCT_VERSION=7.9.1
+set OCCT_VERSION=7.8.1
+REM set OCCT_VERSION=7.9.1
 :: NOTE If updating the default Python version, change PY_VER_MAJOR_MINOR accordingly in run-cmake.bat
 set PYTHON_VERSION=%PYTHON_VERSION%
 
@@ -618,7 +620,7 @@ IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK IF EXIST "%INSTALL_DIR%\%DEPENDENCY_NAM
     echo Found existing "%INSTALL_DIR%\%DEPENDENCY_NAME%", skipping
     goto :zstd
 )
-call :GitCloneAndCheckoutRevision https://gitlab.com/libeigen/eigen.git "%DEPENDENCY_DIR%" 3.3.9
+call :GitCloneAndCheckoutRevision https://gitlab.com/libeigen/eigen.git "%DEPENDENCY_DIR%" %EIGEN_VERSION%
 
 :zstd
 set DEPENDENCY_NAME=zstd

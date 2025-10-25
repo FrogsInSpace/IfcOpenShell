@@ -65,7 +65,7 @@ if(HAS_MAX)
 			continue()
 		endif()
 
-        message(STATUS "Adding build target: IFCMax for 3ds Max SDK ${max_year}")
+        message(STATUS "Adding build target: IFCMax for 3ds Max SDK ${max_year}, Tier: ${BUILD_TIER_NAME}")
 
         add_library(IfcMax_${max_year} SHARED  ${MAX_SOURCES})
 		
