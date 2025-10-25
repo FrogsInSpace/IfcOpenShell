@@ -137,7 +137,7 @@ if(HAS_MAX)
 		
 		if(NOT "${BUILD_TIER_NAME}" STREQUAL "")
 			# For the moment we always build the free tier, see IfcMax.cpp for the preprocessor #define conditional
-			target_compile_definitions(IfcMax_${max_year} PRIVATE BUILD_FREE_TIER)
+			target_compile_definitions(IfcMax_${max_year} PRIVATE BUILD_${BUILD_TIER_NAME}_TIER)
 			set_target_properties(IfcMax_${max_year} PROPERTIES OUTPUT_NAME "IfcMax_${BUILD_TIER_NAME}_${max_year}")
 		endif()
 		
