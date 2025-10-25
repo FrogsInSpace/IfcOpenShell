@@ -210,12 +210,6 @@ class DuplicateDrawing(bpy.types.Operator, tool.Ifc.Operator):
             should_duplicate_annotations=self.should_duplicate_annotations,
         )
 
-        # TODO: Why need to resync active drawing, if it wasn't changed.
-        drawing = props.get_active_drawing()
-        if drawing is None:
-            return
-        core.sync_references(tool.Ifc, tool.Collector, tool.Drawing, drawing=drawing)
-
 
 class CreateDrawing(bpy.types.Operator):
     """Creates/refreshes a .svg drawing
@@ -1258,6 +1252,8 @@ class CreateDrawing(bpy.types.Operator):
 
     def get_svg_classes(self, element, layer=None):
         classes = [element.is_a()]
+
+        # ─── Material ──────────────────────────────────────────────
         material = ifcopenshell.util.element.get_material(element, should_skip_usage=True)
         material_name = ""
         if material:
@@ -1270,6 +1266,7 @@ class CreateDrawing(bpy.types.Operator):
         else:
             classes.append("material-null")
 
+        # ─── Layer ─────────────────────────────────────────────────
         if layer:
             classes.append(layer.is_a())
             layer_material = layer.Material
@@ -1282,13 +1279,22 @@ class CreateDrawing(bpy.types.Operator):
                 layer_material_category = tool.Drawing.canonicalise_class_name(layer_material.Category)
                 classes.append(f"layer-material-category-{layer_material_category}")
 
+        # ─── Metadata ──────────────────────────────────────────────
         for key in self.metadata:
             value = ifcopenshell.util.selector.get_element_value(element, key)
             if value:
                 classes.append(
-                    tool.Drawing.canonicalise_class_name(key) + "-" + tool.Drawing.canonicalise_class_name(str(value))
+                    tool.Drawing.canonicalise_class_name(key) + "-" +
+                    tool.Drawing.canonicalise_class_name(str(value))
                 )
+
+        # ─── Target View ───────────────────────────────────────────
+        if getattr(self.cprops, "target_view", None):
+            target_view_class = tool.Drawing.canonicalise_class_name(str(self.cprops.target_view))
+            classes.append(f"target-view-{target_view_class}")
+
         return classes
+
 
     def is_manifold(self, obj) -> bool:
         result = self.is_manifold_cache.get(obj.data.name, None)
@@ -1866,12 +1872,14 @@ class AddDrawingToSheet(bpy.types.Operator, tool.Ifc.Operator):
     @classmethod
     def poll(cls, context):
         props = tool.Drawing.get_document_props()
-        # Won't be visible in UI anyway.
-        prefs = tool.Blender.get_addon_preferences()
-        if not props.sheets or not prefs.data_dir:
-            return False
         if not tool.Drawing.get_active_drawing_item():
             cls.poll_message_set("No drawing selected.")
+            return False
+        if not props.sheets:
+            cls.poll_message_set("No sheets available.")
+            return False
+        if not tool.Blender.get_user_data_dir():
+            cls.poll_message_set("BIM data directory not set.")
             return False
         return True
 
@@ -2226,6 +2234,7 @@ class ActivateModel(bpy.types.Operator):
             )
 
         tool.Blender.reset_object_visibility()
+        tool.Drawing.hide_all_drawing_collections()
         tool.Blender.update_viewport()
         bonsai.bim.handler.refresh_ui_data()
 
@@ -2336,10 +2345,21 @@ class ActivateDrawingBase(tool.Ifc.Operator):
         camera = context.scene.camera
         assert camera
         camera_props = tool.Drawing.get_camera_props(camera)
+        # Check if this is a reflected ceiling camera and preserve its scale
+        camera_element = tool.Ifc.get_entity(camera)
+        is_reflected = False
+        if camera_element:
+            is_reflected = ifcopenshell.util.element.get_pset(camera_element, "EPset_Drawing", "TargetView") == "REFLECTED_PLAN_VIEW"
+            if is_reflected and camera.scale != (-1, -1, -1):
+                camera.scale = (-1, -1, -1)
+
+
         if camera_props.update_representation(camera.matrix_world):
             bpy.ops.bim.update_representation(obj=camera.name, ifc_representation_class="")
-        # See 6452 and 6478.
-        # bpy.ops.bim.refresh_clipping_planes("INVOKE_DEFAULT")
+            # Restore the scale after update if needed
+            if is_reflected:
+                camera.scale = (-1, -1, -1)
+
 
         return {"FINISHED"}
 
@@ -2815,8 +2835,13 @@ class AddScheduleToSheet(bpy.types.Operator, tool.Ifc.Operator):
         if not props.schedules:
             cls.poll_message_set("No schedule selected.")
             return False
-        prefs = tool.Blender.get_addon_preferences()
-        return props.schedules and props.sheets and prefs.data_dir
+        if not props.sheets:
+            cls.poll_message_set("No sheets available.")
+            return False
+        if not tool.Blender.get_user_data_dir():
+            cls.poll_message_set("BIM data directory not set.")
+            return False
+        return True
 
     def _execute(self, context):
         props = tool.Drawing.get_document_props()
@@ -2883,8 +2908,13 @@ class AddReferenceToSheet(bpy.types.Operator, tool.Ifc.Operator):
         if not props.references:
             cls.poll_message_set("No reference selected.")
             return False
-        bim_props = tool.Blender.get_bim_props()
-        return props.references and props.sheets and bim_props.data_dir
+        if not props.sheets:
+            cls.poll_message_set("No sheets available.")
+            return False
+        if not tool.Blender.get_user_data_dir():
+            cls.poll_message_set("BIM data directory not set.")
+            return False
+        return True
 
     def _execute(self, context):
         props = tool.Drawing.get_document_props()
@@ -3733,3 +3763,19 @@ class OpenDocumentationWebUi(bpy.types.Operator):
         else:
             bpy.ops.bim.open_web_browser(page="documentation")
         return {"FINISHED"}
+
+
+class ExcludeAnnotation(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.exclude_annotation"
+    bl_label = "Exclude Annotation"
+    bl_description = "Excludes the automatic annotation reference from the drawing"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def _execute(self, context):
+        if not (obj := bpy.context.scene.camera) or not (drawing := tool.Ifc.get_entity(obj)):
+            return
+        for obj in tool.Blender.get_selected_objects(include_active=False):
+            if (element := tool.Ifc.get_entity(obj)) and tool.Drawing.is_auto_annotation(element):
+                if (referenced_element := tool.Drawing.get_annotation_element(element)):
+                    tool.Drawing.exclude_annotation_from_drawing(referenced_element, drawing)
+        core.sync_references(tool.Ifc, tool.Collector, tool.Drawing, drawing=drawing)
