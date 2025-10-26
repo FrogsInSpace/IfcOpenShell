@@ -135,12 +135,15 @@ if(HAS_MAX)
 		
         set_target_properties(IfcMax_${max_year} PROPERTIES SUFFIX ".dli")
 		
-		if(NOT "${BUILD_TIER_NAME}" STREQUAL "")
-			# For the moment we always build the free tier, see IfcMax.cpp for the preprocessor #define conditional
+		if(BUILD_TIER_NAME)
 			target_compile_definitions(IfcMax_${max_year} PRIVATE BUILD_${BUILD_TIER_NAME}_TIER)
-			set_target_properties(IfcMax_${max_year} PROPERTIES OUTPUT_NAME "IfcMax_${BUILD_TIER_NAME}_${max_year}")
-		endif()
-		
+
+			string(TOLOWER "${BUILD_TIER_NAME}" BUILD_TIER_lower)
+			if(BUILD_TIER_lower STREQUAL "free")
+				set_target_properties(IfcMax_${max_year} PROPERTIES OUTPUT_NAME "IfcMax_Free_${max_year}")
+			endif()
+		endif()		
+
         install(TARGETS IfcMax_${max_year} RUNTIME DESTINATION ${BINDIR})
 		
     endforeach()
