@@ -27,12 +27,6 @@ endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON) # not necessary, but encouraged
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_program(CCACHE_FOUND ccache)
-if(CCACHE_FOUND)
-    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-    message(STATUS "`ccache` is found, using it as a compiler launcher.")
-endif()
-
 add_definitions(-D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 
 if(POLICY CMP0141) # 3.25+
@@ -127,8 +121,10 @@ if((BUILD_CONVERT OR BUILD_GEOMSERVER OR BUILD_IFCPYTHON) AND(NOT BUILD_IFCGEOM)
     set(BUILD_IFCGEOM ON)
 endif()
 
+find_program(CCACHE_FOUND ccache)
 if(CCACHE_FOUND)
-    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
+    message(STATUS "`ccache` is found, using it as a compiler launcher.")
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_FOUND}")
     if(MSVC)
         # By default Visual Studio generators will use /Zi which is not compatible
         # with ccache, so tell Visual Studio to use /Z7 instead.
@@ -212,6 +208,8 @@ if(NOT MINIMAL_BUILD)
     UNIFY_ENVVARS_AND_CACHE(LIBXML2_INCLUDE_DIR)
     UNIFY_ENVVARS_AND_CACHE(LIBXML2_LIBRARIES)
     UNIFY_ENVVARS_AND_CACHE(PCRE_LIBRARY_DIR)
+    UNIFY_ENVVARS_AND_CACHE(PYTHON_INCLUDE_DIR)
+    UNIFY_ENVVARS_AND_CACHE(PYTHON_LIBRARY)
     UNIFY_ENVVARS_AND_CACHE(PYTHON_EXECUTABLE)
     UNIFY_ENVVARS_AND_CACHE(HDF5_INCLUDE_DIR)
     UNIFY_ENVVARS_AND_CACHE(HDF5_LIBRARY_DIR)
@@ -453,8 +451,11 @@ if(NOT MINIMAL_BUILD)
     clear_wasm_sysroot()
     if(IFCXML_SUPPORT)
         if((NOT LIBXML2_INCLUDE_DIR AND NOT LIBXML2_LIBRARIES))
-            # First try config mode (probably works with vcpkg, Conan, macOS brew installs, but not on ubuntu 22.04?)
+            # First try config mode (probably works with vcpkg, Conan, macOS brew installs, but not on ubuntu 22.04)
+            # CONFIG is provided using root path, so no need to clear sysroot here.
+            restore_wasm_sysroot()
             find_package(LibXml2 QUIET CONFIG)
+            clear_wasm_sysroot()
 
             if(NOT LibXml2_FOUND)
                 # Fallback to CMake's builtin FindLibXml2 module (works on Ubuntu)

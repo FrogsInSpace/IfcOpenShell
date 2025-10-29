@@ -90,10 +90,6 @@ IF %VS_VER%==2008 set PATH=C:\Windows\Microsoft.NET\Framework\v3.5;%PATH%
 
 :: User-configurable build options
 IF NOT DEFINED IFCOS_INSTALL_PYTHON set IFCOS_INSTALL_PYTHON=TRUE
-set PYTHON_VERSION=3.11
-py -%PYTHON_VERSION% --version 2>&1>NUL
-IF %ERRORLEVEL%==0 set IFCOS_INSTALL_PYTHON=EXISTS
-set PYTHON_VERSION=%PYTHON_VERSION%.7
 
 IF NOT DEFINED IFCOS_NUM_BUILD_PROCS set IFCOS_NUM_BUILD_PROCS=%NUMBER_OF_PROCESSORS%
 
@@ -157,12 +153,12 @@ echo     Defaults to RelWithDebInfo if not specified.
 IF %BUILD_CFG%==MinSizeRel call cecho.cmd 0 14 "     WARNING: MinSizeRel build can suffer from a significant performance loss."
 call cecho.cmd 0 13 "* Build Type`t`t= %BUILD_TYPE%"
 echo   - The used build type for the dependencies (Build, Rebuild, Clean).
-echo     Defaults to Build if not specified. Rebuild/Clean also uninstalls Python (if it was installed by this script).
+echo     Defaults to Build if not specified.
 call cecho.cmd 0 13 "* IFCOS_INSTALL_PYTHON`t= %IFCOS_INSTALL_PYTHON%"
 echo   - Download and install Python.
 echo     Set to something other than TRUE if you wish to use an already installed version of Python.
-echo     EXISTS value is set automatically if same Python version is already found on the system
-echo     and we won't be able to install it again.
+echo     But then you'll need to set PYTHONHOME env variable to your Python installation before running run-cmake.bat
+echo     to your Python installation path.
 call cecho.cmd 0 13 "* IFCOS_NUM_BUILD_PROCS`t= %IFCOS_NUM_BUILD_PROCS%"
 echo   - How many MSBuild.exe processes may be run in parallel.
 echo     Defaults to NUMBER_OF_PROCESSORS. Used also by other IfcOpenShell build scripts.
@@ -191,17 +187,17 @@ cd "%DEPS_DIR%"
 set HDF5_VERSION=1_13_1
 set OCCT_VERSION=7.8.1
 REM set OCCT_VERSION=7.9.1
-:: NOTE If updating the default Python version, change PY_VER_MAJOR_MINOR accordingly in run-cmake.bat
-set PYTHON_VERSION=%PYTHON_VERSION%
+IF DEFINED PYTHON_VERSION (
+    echo Using overridden PYTHON_VERSION: '%PYTHON_VERSION%'
+) else (
+    set PYTHON_VERSION=3.11.7
+)
 
 :: VERSION DERIVATIONS
 set OCC_INCLUDE_DIR=%INSTALL_DIR%\opencascade-%OCCT_VERSION%\inc>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
 set OCC_LIBRARY_DIR=%INSTALL_DIR%\opencascade-%OCCT_VERSION%\win%ARCH_BITS%\lib>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
-for /f "tokens=1,2,3 delims=." %%a in ("%PYTHON_VERSION%") do (
-    set PY_VER_MAJOR_MINOR=%%a%%b
-)
 IF "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
-    set PYTHONHOME=%INSTALL_DIR%\Python%PY_VER_MAJOR_MINOR%
+    set PYTHONHOME=%DEPS_DIR%\python.%PYTHON_VERSION%\tools
 )
 
 :: Cache last used CMake generator and configurable dependency dirs for other scripts to use
@@ -212,9 +208,55 @@ echo HDF5_VERSION=%HDF5_VERSION%>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
 echo OCC_INCLUDE_DIR=%OCC_INCLUDE_DIR%>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
 echo OCC_LIBRARY_DIR=%OCC_LIBRARY_DIR%>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
 IF "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
-    echo PY_VER_MAJOR_MINOR=%PY_VER_MAJOR_MINOR%>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
     echo PYTHONHOME=%PYTHONHOME%>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
 )
+
+
+:nuget
+set DEPENDENCY_NAME=nuget
+set NUGET_VERSION=6.14.0
+set NUGET_INSTALL_DIR=%DEPS_DIR%\nuget-%NUGET_VERSION%
+set NUGET_EXE=%NUGET_INSTALL_DIR%\nuget.exe
+
+where nuget >nul 2>&1
+IF %ERRORLEVEL%==0 (
+    echo Found existing nuget in PATH. Skipping.
+    for /f "delims=" %%i in ('where nuget') do set "NUGET_EXE=%%i"
+    goto :ccache
+)
+
+IF EXIST "%NUGET_EXE%" (
+    echo Found existing "%DEPS_DIR%\nuget.exe", skipping
+    goto :ccache
+)
+
+cd %DEPS_DIR%
+call :DownloadFile ^
+    https://dist.nuget.org/win-x86-commandline/v%NUGET_VERSION%/nuget.exe ^
+    "%NUGET_INSTALL_DIR%" nuget.exe
+IF NOT %ERRORLEVEL%==0 GOTO :Error
+
+
+:ccache
+set DEPENDENCY_NAME=ccache
+set CCACHE_VERSION=4.12.1
+set CCACHE_INSTALL_DIR=%DEPS_DIR%\%DEPENDENCY_NAME%.%CCACHE_VERSION%\tools
+set DEPENDENCY_DIR=%CCACHE_INSTALL_DIR%
+
+where ccache >nul 2>&1
+IF %ERRORLEVEL%==0 (
+    echo Found existing ccache in PATH. Skipping.
+    goto :proj
+)
+
+echo CCACHE_INSTALL_DIR=%CCACHE_INSTALL_DIR%>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
+IF EXIST "%DEPENDENCY_DIR%" (
+    echo Found existing "%DEPENDENCY_DIR%", skipping
+    goto :proj
+)
+
+"%NUGET_EXE%" install ccache -Version %CCACHE_VERSION% -OutputDirectory "%DEPS_DIR%"
+IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 :proj
 
@@ -518,31 +560,28 @@ set PYTHON_AMD64_POSTFIX=-amd64
 IF NOT %TARGET_ARCH%==x64 set PYTHON_AMD64_POSTFIX=
 set PYTHON_INSTALLER=python-%PYTHON_VERSION%%PYTHON_AMD64_POSTFIX%.exe
 
-IF "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
-    cd "%DEPS_DIR%"
-    call :DownloadFile https://www.python.org/ftp/python/%PYTHON_VERSION%/%PYTHON_INSTALLER% "%DEPS_DIR%" %PYTHON_INSTALLER%
-    IF NOT %ERRORLEVEL%==0 GOTO :Error
-    REM Uninstall if build Rebuild/Clean used
-    IF NOT %BUILD_TYPE%==Build (
-        call cecho.cmd 0 13 "Uninstalling %DEPENDENCY_NAME%. Please be patient, this will take a while."
-        start /w %PYTHON_INSTALLER% /quiet /uninstall
-    )
-
-    IF NOT EXIST "%PYTHONHOME%". (
-        call cecho.cmd 0 13 "Installing %DEPENDENCY_NAME%. Please be patient, this will take a while."
-        start /w  %PYTHON_INSTALLER% /quiet TargetDir="%PYTHONHOME%"
-        if errorlevel 1 (
-            :: Standard installer doesn't support installing same Python version twice,
-            :: but we skip installation during IFCOS_INSTALL_PYTHON initialization.
-            call cecho.cmd 0 12 "Failed to install Python. Error code: !ERRORLEVEL!."
-            GOTO :Error
-        )
-    ) ELSE (
-        call cecho.cmd 0 13 "%DEPENDENCY_NAME% already installed. Skipping."
-    )
-) ELSE (
-    call cecho.cmd 0 13 "IFCOS_INSTALL_PYTHON not true, skipping installation of Python."
+IF NOT "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
+    call cecho.cmd 0 13 "IFCOS_INSTALL_PYTHON not 'TRUE', skipping installation of Python."
+    goto :SWIG
 )
+
+:: nuget doesn't support providing architecture for packages.
+if NOT %TARGET_ARCH%==x64 (
+    call cecho.cmd 0 12 "Automatic insallation of Python for x86 builds is not supported,"
+    call cecho.cmd 0 12 "please install Python %PYTHON_VERSION% manually and ensure that it is available in PATH."
+    call cecho.cmd 0 12 "https://www.python.org/ftp/python/%PYTHON_VERSION%/%PYTHON_INSTALLER%"
+    goto :Error
+)
+
+
+if EXIST "%PYTHONHOME%" (
+    echo Found existing '%PYTHONHOME%', skipping installation.
+    goto :SWIG
+)
+
+"%NUGET_EXE%" install Python -Version %PYTHON_VERSION% -OutputDirectory "%DEPS_DIR%"
+IF NOT %ERRORLEVEL%==0 GOTO :Error
+
 
 :SWIG
 
@@ -765,6 +804,7 @@ exit /b %IFCOS_SCRIPT_RET%
 :: DownloadFile - Downloads a file using PowerShell
 :: Params: %1 url, %2 destinationDir, %3 filename
 :DownloadFile
+mkdir "%2"
 pushd "%2"
 if not exist "%~3". (
     call cecho.cmd 0 13 "Downloading %DEPENDENCY_NAME% into %~2."

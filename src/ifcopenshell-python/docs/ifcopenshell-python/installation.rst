@@ -44,6 +44,8 @@ ZIP packages
    +-------------+---------------------------------+-------------------------------+---------------------------------+-----------------------------------+
    | Python 3.13 | :ios_python_url:`py313-linux64` | :ios_python_url:`py313-win64` | :ios_python_url:`py313-macos64` | :ios_python_url:`py313-macosm164` |
    +-------------+---------------------------------+-------------------------------+---------------------------------+-----------------------------------+
+   | Python 3.14 | :ios_python_url:`py314-linux64` | :ios_python_url:`py314-win64` | :ios_python_url:`py314-macos64` | :ios_python_url:`py314-macosm164` |
+   +-------------+---------------------------------+-------------------------------+---------------------------------+-----------------------------------+
 
 2. Unzip the downloaded file and copy the ``ifcopenshell`` directory into your
    Python path. If you're not sure where your Python path is, run the following
@@ -176,13 +178,19 @@ to launch a simple notebook.
 Web Assembly
 ------------
 
-IfcOpenShell is available as technology preview to be run using WASM. This
-allows you to run IfcOpenShell in a browser using pyodide. This implementation
-is incredibly heavy and will incur a long load time, but once loaded, will give
-you full access to the entire IfcOpenShell API.
+To run IfcOpenShell in a browser using pyodide, we have available pyodide WASM
+packages at `wasm-wheels
+<https://github.com/IfcOpenShell/wasm-wheels#pyodide-test-wheels>`__ repository.
 
-`Click here <https://github.com/IfcOpenShell/wasm-preview>`__ to learn how to
-use WASM.
+There is also a technology preview to be run using WASM. This implementation
+is incredibly heavy and will incur a long load time, but once loaded, will give
+you full access to the entire IfcOpenShell API:
+
+- the latest preview - `here
+  <https://github.com/IfcOpenShell/IfcOpenShell/blob/v0.8.0/src/pyodide/demo-app/README.md>`__
+
+- an older preview, that may have some additional information - `here
+  <https://github.com/IfcOpenShell/wasm-preview>`__
 
 Using Bonsai
 ------------
