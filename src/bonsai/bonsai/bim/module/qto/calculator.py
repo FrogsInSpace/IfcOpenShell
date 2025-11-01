@@ -859,8 +859,23 @@ def get_gross_top_area(obj: bpy.types.Object, angle: float = 45) -> float:
 
                 entity = ifc.by_guid(opening_id)
                 open_obj = tool.Ifc.get_object(entity)
-                assert isinstance(open_obj, bpy.types.Object)
-                opening_area += get_net_top_area(open_obj, angle=angle)
+
+                # Check if the opening has a Blender object representation
+                if open_obj is None:
+                    # If no Blender object exists, create a temporary mesh from the IFC geometry
+                    try:
+                        mesh = get_gross_element_mesh(entity)
+                        temp_obj = bpy.data.objects.new("TempOpening", mesh)
+                        opening_area += get_net_top_area(temp_obj, angle=angle)
+                        delete_obj(temp_obj)
+                        delete_mesh(mesh)
+                    except Exception as e:
+                        # If we can't create geometry, skip this opening
+                        print(f"Warning: Could not calculate opening area for {opening_id}: {e}")
+                        continue
+                else:
+                    # Opening has a Blender representation, use it directly
+                    opening_area += get_net_top_area(open_obj, angle=angle)
             else:
                 continue
 

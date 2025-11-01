@@ -382,11 +382,13 @@ if MAC_CROSS_COMPILE_INTEL:
     MAC_CROSS_COMPILE_INTEL_BJAM_ARGS = ["architecture=x86"]
     MAC_CROSS_COMPILE_INTEL_CXX = "clang++ -arch x86_64"
     MAC_CROSS_COMPILE_INTEL_CC = "clang -arch x86_64"
+    MAC_CROSS_COMPILE_INTEL_AUTOCONF_HOST_ARGS = ["--host=x86_64-apple-darwin"]
 else:
     MAC_CROSS_COMPILE_INTEL_ARGS = []
     MAC_CROSS_COMPILE_INTEL_BJAM_ARGS = []
     MAC_CROSS_COMPILE_INTEL_CXX = ""
     MAC_CROSS_COMPILE_INTEL_CC = ""
+    MAC_CROSS_COMPILE_INTEL_AUTOCONF_HOST_ARGS = []
 
 OFF_ON = ["OFF", "ON"]
 BUILD_STATIC = "shared" not in flags
@@ -1195,7 +1197,9 @@ if "cgal" in targets:
     OLD_CC = None
     if MAC_CROSS_COMPILE_INTEL:
         OLD_CC = os.environ.get("CC")
+        # Otherwise it's using arm64 `gcc` and fails to build gmp.
         os.environ["CC"] = MAC_CROSS_COMPILE_INTEL_CC
+        gmp_args.extend(MAC_CROSS_COMPILE_INTEL_AUTOCONF_HOST_ARGS)
 
     build_dependency(
         name=f"gmp-{GMP_VERSION}",
@@ -1441,17 +1445,14 @@ if not WASM and (not explicit_targets or {"IfcGeom", "IfcConvert", "IfcGeomServe
 
     logger.info("\rBuilding executables...   ")
 
-    run([make, f"-j{IFCOS_NUM_BUILD_PROCS}"], cwd=executables_dir)
+    run([make, f"-j{IFCOS_NUM_BUILD_PROCS}", "VERBOSE=1"], cwd=executables_dir)
     run([make, "install/strip" if BUILD_CFG == "Release" else "install"], cwd=executables_dir)
 
 if "IfcOpenShell-Python" in targets:
     # On OSX the actual Python library is not linked against.
     ADDITIONAL_ARGS = ""
     if platform.system() == "Darwin":
-        ADDITIONAL_ARGS = "-Wl,-flat_namespace,-undefined,suppress"
-
-    if "wasm" in flags:
-        ADDITIONAL_ARGS = "-Wl,-undefined,suppress"
+        ADDITIONAL_ARGS = "-Wl,-undefined,dynamic_lookup"
 
     # NOTE: We don't use `CXXFLAGS` for wrappers, so wrapper is compiled with different flags
     # (e.g. ` -fdata-sections` is missing, which is set by default for executables)
@@ -1516,7 +1517,7 @@ if "IfcOpenShell-Python" in targets:
 
         logger.info(f"\rBuilding python {python_version} wrapper...   ")
 
-        run([make, f"-j{IFCOS_NUM_BUILD_PROCS}", "ifcopenshell_wrapper"], cwd=python_dir)
+        run([make, f"-j{IFCOS_NUM_BUILD_PROCS}", "ifcopenshell_wrapper", "VERBOSE=1"], cwd=python_dir)
         run([make, "install/local"], cwd=os.path.join(python_dir, "ifcwrap"))
 
         if python_executable:

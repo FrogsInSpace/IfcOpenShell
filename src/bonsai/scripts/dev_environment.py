@@ -47,11 +47,11 @@ elif sys.platform == "darwin":
 elif sys.platform == "linux":
     BLENDER_PATH = Path.home() / f".config/blender/{BLENDER_VERSION}"
 else:
-    raise RuntimeError("Unsupported platform")
+    raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
 
 BONSAI_PATH_CANDIDATES = (
-    # Installed from Bonsai Unstalble Repo.
+    # Installed from Bonsai Unstable Repo.
     BLENDER_PATH / r"extensions/raw_githubusercontent_com/bonsai",
     # Installed via offline installation.
     BLENDER_PATH / r"extensions/user_default/bonsai",
