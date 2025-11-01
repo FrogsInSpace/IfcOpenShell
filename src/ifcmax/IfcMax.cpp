@@ -345,7 +345,7 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
 	// previous "opencascade"
     //IfcGeom::Iterator iterator( "hybrid-cgal-simple-opencascade", settings, &file);
     
-	auto kernel = ifcopenshell::geometry::kernels::construct(&file, "hybrid-cgal-simple-opencascade", settings);
+	auto kernel = ifcopenshell::geometry::kernels::construct(&file, "opencascade", settings);
     IfcGeom::Iterator iterator( std::move( kernel), settings, &file);
 
     delete[] fn_mb;
