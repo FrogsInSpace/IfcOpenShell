@@ -295,7 +295,6 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
 
 
 	settings.get<ifcopenshell::geometry::settings::ReorientShells>().value = true; // should be true
-	settings.get<ifcopenshell::geometry::settings::WeldVertices>().value = true;   // should be true
 	settings.get<ifcopenshell::geometry::settings::UnifyShapes>().value = true;   // should be true
 	settings.get<ifcopenshell::geometry::settings::UseWorldCoords>().value = false; // should be false to get a pivot with correct coordinates
 	//settings.get<ifcopenshell::geometry::settings::UseMaterialNames>().value = false;
@@ -309,8 +308,11 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
 	// ATTENTION: breaks hierarchy positioning when active ( "site-local-placement" )
 	settings.get<ifcopenshell::geometry::settings::SiteLocalPlacement>().value = false;      // should be FALSE
 
+	// when vertex welding is enabled, normals  calculation is internally disabled ( see OpenCascadeConversionResult.cpp:239 )
+	settings.get<ifcopenshell::geometry::settings::WeldVertices>().value = true;   // should be true
 
 	settings.get<ifcopenshell::geometry::settings::DontEmitNormals>().value = false;
+	settings.get<ifcopenshell::geometry::settings::GenerateUvs>().value = false;
 
 
 	settings.get<ifcopenshell::geometry::settings::CircleSegments>().value = 32;    // should be 32
@@ -342,8 +344,8 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
     auto annotations = file.instances_by_type("IfcAnnotation");
     auto solids = file.instances_by_type("IfcSolidModel");
 
-	// previous "opencascade"
-    //IfcGeom::Iterator iterator( "hybrid-cgal-simple-opencascade", settings, &file);
+	// cgal kernels produce std::vector incompatiblities
+    //auto kernel = ifcopenshell::geometry::kernels::construct(&file, "hybrid-cgal-simple-opencascade", settings);
     
 	auto kernel = ifcopenshell::geometry::kernels::construct(&file, "opencascade", settings);
     IfcGeom::Iterator iterator( std::move( kernel), settings, &file);
@@ -406,7 +408,10 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
 
         RefResult refSuccess = REF_INVALID;
 
-        refSuccess = impNode->Reference(BuildMesh(triElement));
+		auto mesh = BuildMesh(triElement);
+
+		if ( mesh != nullptr)
+            refSuccess = impNode->Reference(mesh);
 
         if (refSuccess != REF_SUCCEED) {
 			LogToListener(_M("Error creating importer reference for imported element #%d.\n"), element->id());
@@ -488,20 +493,32 @@ void IFCImp::BuildFullName( const IfcUtil::IfcBaseEntity& entity, MSTR& long_nam
 TriObject* IFCImp::BuildMesh(const IfcGeom::TriangulationElement* element) {
     TriObject* tri = CreateNewTriObject();
 
-    const auto& verts = element->geometry().verts();
+	const IfcGeom::Representation::Triangulation& ios_mesh = element->geometry();
+
+    const auto& verts = ios_mesh.verts();
     const int numVerts = (int)verts.size() / 3;
+
+	//const auto& normals = ios_mesh.normals();
+ //   const int numNormals = (int)normals.size() / 3;
+
+ //   const auto& uvs = ios_mesh.uvs();
+ //   const int numUVs = (int)uvs.size() / 3;
+
 
     tri->mesh.setNumVerts(numVerts);
     for (int i = 0; i < numVerts; i++) {
         tri->mesh.setVert(i, Point3ByIndex(verts, i));
+		//if( i < numNormals ) {
+  //          tri->mesh.setNormal(i, Point3ByIndex(normals, i));
+  //      }
     }
 
-    bool needs_default = std::find(element->geometry().material_ids().begin(), element->geometry().material_ids().end(), -1) != element->geometry().material_ids().end();
+    bool needs_default = std::find(ios_mesh.material_ids().begin(), ios_mesh.material_ids().end(), -1) != ios_mesh.material_ids().end();
 
     typedef std::pair<int, int> edge_t;
 
     std::set<edge_t> face_boundaries;
-    for (std::vector<int>::const_iterator it = element->geometry().edges().begin(); it != element->geometry().edges().end();) {
+    for (std::vector<int>::const_iterator it = ios_mesh.edges().begin(); it != ios_mesh.edges().end();) {
         const int v1 = *it++;
         const int v2 = *it++;
 
@@ -509,13 +526,14 @@ TriObject* IFCImp::BuildMesh(const IfcGeom::TriangulationElement* element) {
         face_boundaries.insert(e);
     }
 
-	const auto& faces = element->geometry().faces();
+    const auto& faces = ios_mesh.faces();
+
     const int numFaces = (int)faces.size() / 3;
 
     tri->mesh.setNumFaces(numFaces);
 
     for (int i = 0; i < numFaces; i++) {
-		const int v1 = faces[3 * i + 0];
+        const int v1 = faces[3 * i + 0];
         const int v2 = faces[3 * i + 1];
         const int v3 = faces[3 * i + 2];
 
@@ -530,24 +548,41 @@ TriObject* IFCImp::BuildMesh(const IfcGeom::TriangulationElement* element) {
         tri->mesh.faces[i].setVerts(v1, v2, v3);
         tri->mesh.faces[i].setEdgeVisFlags(b1, b2, b3);
 
-        MtlID mtlid = (MtlID)element->geometry().material_ids()[i];
+        MtlID mtlid = (MtlID)ios_mesh.material_ids()[i];
         if (needs_default) {
             mtlid++;
         }
         tri->mesh.faces[i].setMatID(mtlid);
     }
 
-    tri->mesh.buildNormals();
+    bool valid = tri->CheckObjectIntegrity();
+
+    if (!valid) {
+        return nullptr;
+    }
+    
+	// apply simple box mapping 
+#if MAX_VERSION_MAJOR < 22
+	// in 3ds Max 2017-2019 SDK, Matrix3::Identity was declared in matrix3.h, but did'nt actually exist in the lib ....
+	Matrix3 ident(TRUE);
+    tri->mesh.ApplyUVWMap(MAP_ACAD_BOX, 1, 1, 1, 0, 0, 0, 0, ident);
+#else
+    tri->mesh.ApplyUVWMap(MAP_ACAD_BOX, 1, 1, 1, 0, 0, 0, 0, Matrix3::Identity);
+#endif
+
+    // this one tends to crash, so we skip it for the time being
+    // tri->mesh.buildNormals();
+
     // Either use this or undefine the FACESETS_AS_COMPOUND option in IfcGeom.h to have
     // properly oriented normals. Using only the line below will result in a consistent
     // orientation of normals across shells, but not always oriented towards the
     // outside.
     // tri->mesh.UnifyNormals(false);
-    tri->mesh.BuildStripsAndEdges();
+
+	tri->mesh.BuildStripsAndEdges();
     tri->mesh.InvalidateTopologyCache();
     tri->mesh.InvalidateGeomCache();
-
-	return tri;
+    return tri;
 }
 
 inline Point3 IFCImp::Point3ByIndex(const std::vector<double>& verts, int index) {

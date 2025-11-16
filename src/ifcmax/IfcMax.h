@@ -39,7 +39,7 @@ class IFCImp : public SceneImport {
     BOOL VerifyCancel();
 
   private:
-    inline Point3 IFCImp::Point3ByIndex(const std::vector<double>& verts, int index);
+    inline Point3 Point3ByIndex(const std::vector<double>& verts, int index);
     void BuildFullName(const IfcUtil::IfcBaseEntity& entity, MSTR& long_name);
     TriObject* BuildMesh(const IfcGeom::TriangulationElement* triElement);
 };
