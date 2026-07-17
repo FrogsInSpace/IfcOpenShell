@@ -98,7 +98,8 @@ IF NOT DEFINED IFCOS_NUM_BUILD_PROCS set IFCOS_NUM_BUILD_PROCS=%NUMBER_OF_PROCES
 :: For subroutines
 REM /clp:ErrorsOnly;WarningsOnly
 :: Note BUILD_TYPE not passed, Clean e.g. wouldn't delete the installed files.
-set MSBUILD_CMD=MSBuild.exe /nologo /m:%IFCOS_NUM_BUILD_PROCS%
+set MSBUILD_MULTIPROC=/m /p:CL_MPCount=%IFCOS_NUM_BUILD_PROCS% /p:UseMultiToolTask=true /p:EnforceProcessCountAcrossBuilds=true
+set MSBUILD_CMD=MSBuild.exe /nologo %MSBUILD_MULTIPROC%
 
 echo.
 
@@ -124,8 +125,8 @@ if "%CMAKE_VERSION%" LSS "cmake version 3.11.4" (
 set JSON_VERSION=3.6.1
 set CGAL_VERSION=v5.5.5
 REM set CGAL_VERSION=v5.6.3
-set EIGEN_VERSION=3.4.0
-
+set EIGEN_VERSION=3.3.9
+set PROJ_VERSION=9.4.1
 :: NOTE Should be v1.6.68, but that caused problems with LIBXML2
 REM set OPENCOLLADA_VERSION=v1.6.68
 set OPENCOLLADA_VERSION=064a60b65c2c31b94f013820856bc84fb1937cc6
@@ -142,7 +143,7 @@ call cecho.cmd 0 10 "Script configuration:"
 call cecho.cmd 0 13 "* CMake Generator`t= '`"%GENERATOR%`'`t
 echo   - Passed to CMake -G option.
 call cecho.cmd 0 13 "* Target Architecture`t= %TARGET_ARCH%"
-echo   - Whether were doing 32-bit (x86) or 64-bit (x64) build.
+echo   - Whether were doing 32-bit (x86) or 64-bit (x64, arm64) build.
 call cecho.cmd 0 13 "* Target Platform`t= %VS_PLATFORM%"
 echo   - Passed to CMake -A option.
 call cecho.cmd 0 13 "* Target Toolset`t= %VS_TOOLSET%"
@@ -197,8 +198,15 @@ IF DEFINED PYTHON_VERSION (
 )
 
 :: VERSION DERIVATIONS
+for /f "tokens=1,2,3 delims=." %%a in ("%PYTHON_VERSION%") do (
+    set PY_VER_MAJOR_MINOR=%%a%%b
+)
 IF "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
-    set PYTHONHOME=%DEPS_DIR%\python.%PYTHON_VERSION%\tools
+    IF /I "%TARGET_ARCH%"=="arm64" (
+        set PYTHONHOME=%DEPS_DIR%\pythonarm64.%PYTHON_VERSION%\tools
+    ) ELSE (
+        set PYTHONHOME=%DEPS_DIR%\python.%PYTHON_VERSION%\tools
+    )
 )
 
 :: Cache last used CMake generator and configurable dependency dirs for other scripts to use
@@ -258,10 +266,9 @@ IF EXIST "%DEPENDENCY_DIR%" (
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 :proj
-
 IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK (
-	IF EXIST "%INSTALL_DIR%\proj-9.2.1" (
-		echo Found existing "%INSTALL_DIR%\proj-9.2.1", skipping
+	IF EXIST "%INSTALL_DIR%\proj-%PROJ_VERSION%" (
+		echo Found existing "%INSTALL_DIR%\proj-%PROJ_VERSION%", skipping
 		goto :mpir
 	)
 )
@@ -281,20 +288,20 @@ copy sqlite3.h %INSTALL_DIR%\sqlite3\include
 popd
 
 set DEPENDENCY_NAME=proj
-set DEPENDENCY_DIR=%DEPS_DIR%\proj-9.2.1
-call :DownloadFile https://download.osgeo.org/proj/proj-9.2.1.zip "%DEPS_DIR%" proj-9.2.1.zip
+set DEPENDENCY_DIR=%DEPS_DIR%\proj-%PROJ_VERSION%
+call :DownloadFile https://download.osgeo.org/proj/proj-%PROJ_VERSION%.zip "%DEPS_DIR%" proj-%PROJ_VERSION%.zip
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-call :ExtractArchive proj-9.2.1.zip "%DEPS_DIR%" "%DEPS_DIR%\proj-9.2.1"
+call :ExtractArchive proj-%PROJ_VERSION%.zip "%DEPS_DIR%" "%DEPS_DIR%\proj-%PROJ_VERSION%"
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 pushd "%DEPENDENCY_DIR%"
-call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\proj-9.2.1" ^
+call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\proj-%PROJ_VERSION%" ^
     -DSQLITE3_INCLUDE_DIR=%INSTALL_DIR%\sqlite3\include ^
     -DSQLITE3_LIBRARY=%INSTALL_DIR%\sqlite3\lib\sqlite3.lib ^
     -DENABLE_TIFF=Off -DENABLE_CURL=Off -DBUILD_PROJSYNC=Off ^
     -DBUILD_SHARED_LIBS=Off ^
     -DBUILD_TESTING=Off
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\PROJ.sln" %BUILD_CFG%
+call :BuildCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -311,8 +318,9 @@ IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK (
 )
 
 set DEPENDENCY_NAME=mpir
+:: `mpfr` depends on relative path `..\mpir\config.h`, so dependency name should match exactly.
 set DEPENDENCY_DIR=%DEPS_DIR%\mpir
-call :GitCloneAndCheckoutRevision https://github.com/BrianGladman/mpir.git "%DEPENDENCY_DIR%"
+call :GitCloneAndCheckoutRevision https://github.com/Andrej730/mpir-vs2026.git "%DEPENDENCY_DIR%"
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 pushd "%DEPENDENCY_DIR%"
 git reset --hard
@@ -324,8 +332,10 @@ powershell -c "get-content %~dp0patches\mpir.patch | %%{$_ -replace \"sdk\",\"%U
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 if NOT "%USE_STATIC_RUNTIME%"=="FALSE" git apply "%~dp0patches\mpir_runtime.patch" --unidiff-zero --ignore-whitespace
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-REM patch to force build using VS2022, in case VS2026 is installed, which currently fails to build mpir
-git apply "%~dp0patches\mpir_build.patch" --unidiff-zero --ignore-whitespace
+IF /I "%VS_PLATFORM%"=="ARM64" (
+    echo "Applying ARM64 Patches for Mpir"
+    git apply "%~dp0patches\mpir-arm64-changes.patch" --unidiff-zero --ignore-whitespace
+)
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 
 cd msvc
@@ -356,6 +366,10 @@ powershell -c "get-content %~dp0patches\mpfr.patch | %%{$_ -replace \"sdk\",\"%U
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 if NOT "%USE_STATIC_RUNTIME%"=="FALSE" git apply "%~dp0patches\mpfr_runtime.patch" --unidiff-zero --ignore-whitespace
 IF NOT %ERRORLEVEL%==0 GOTO :Error
+IF /I "%VS_PLATFORM%"=="ARM64" (
+    echo "Applying ARM64 Patches for Mpfr"
+    git apply "%~dp0patches\mpfr-arm64-changes.patch" --unidiff-zero --ignore-whitespace
+)
 if "%VS_VER%"=="2017" (
   set mpfr_sln=build.vc15
   set orig_platform_toolset=v141
@@ -399,7 +413,7 @@ call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\%HDF5_INSTALL_NAME%" ^
                -DHDF5_BUILD_TOOLS=OFF -DHDF5_BUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=OFF -DHDF5_BUILD_UTILS=OFF ^
                -DHDF5_BUILD_CPP_LIB=ON
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\HDF5.sln" %DEBUG_OR_RELEASE%
+call :BuildCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %DEBUG_OR_RELEASE%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %DEBUG_OR_RELEASE%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -424,6 +438,7 @@ cd "%DEPS_DIR%"
 call :DownloadFile https://github.com/boostorg/boost/releases/download/boost-%BOOST_VERSION%/%BOOST_ZIP% "%DEPS_DIR%" %BOOST_ZIP%
 
 IF NOT %ERRORLEVEL%==0 GOTO :Error
+cd "%DEPS_DIR%"
 call :ExtractArchive %BOOST_ZIP% "%DEPS_DIR%" %DEPENDENCY_DIR%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 
@@ -431,6 +446,11 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 if exist "%DEPS_DIR%\boost-%BOOST_VERSION%". (
     ren %DEPS_DIR%\boost-%BOOST_VERSION% boost_%BOOST_VER%
 )
+
+:: As boost 1.90.0 it still includes b2 that doesn't support vc145 (not to mention older boost versions).
+:: So to support vc145 we download b2 separately (only if we do use vc145).
+call :check_boost_vc145_compatibility "%VC_VER%" "%DEPS_DIR%" "%DEPENDENCY_DIR%"
+if NOT %ERRORLEVEL%==0 GOTO :Error
 
 :: Build Boost build script
 if not exist "%DEPENDENCY_DIR%\project-config.jam". (
@@ -442,13 +462,21 @@ if not exist "%DEPENDENCY_DIR%\project-config.jam". (
     IF NOT %ERRORLEVEL%==0 GOTO :Error
 )
 
+if /I "%TARGET_ARCH%"=="x64" (
+    set B2_ARCH_FEATURE=x86
+) else if /I "%TARGET_ARCH%"=="arm64" (
+    set B2_ARCH_FEATURE=arm
+) else (
+    echo "Failed to identify architecture"
+    GOTO :Error
+)
 set BOOST_LIBS=--with-system --with-regex --with-thread --with-program_options --with-date_time --with-iostreams --with-filesystem
 :: NOTE Boost is fast to build with limited set of libraries so build it always.
 cd "%DEPENDENCY_DIR%"
 call cecho.cmd 0 13 "Building %DEPENDENCY_NAME% %BOOST_LIBS% Please be patient, this will take a while."
 IF EXIST "%DEPENDENCY_DIR%\bin.v2\project-cache.jam" del "%DEPENDENCY_DIR%\bin.v2\project-cache.jam"
 
-call .\b2 toolset=%BOOST_TOOLSET% runtime-link=shared address-model=%ARCH_BITS% --abbreviate-paths -j%IFCOS_NUM_BUILD_PROCS% ^
+call .\b2 toolset=%BOOST_TOOLSET% architecture=%B2_ARCH_FEATURE% runtime-link=shared address-model=%ARCH_BITS% --abbreviate-paths -j%IFCOS_NUM_BUILD_PROCS% ^
     variant=%DEBUG_OR_RELEASE_LOWERCASE% %BOOST_WIN_API% %BOOST_LIBS% stage --stagedir=%DEPENDENCY_INSTALL_DIR%
 
 IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -482,11 +510,13 @@ IF NOT %ERRORLEVEL%==0 git apply --reject --whitespace=fix "%~dp0patches\OpenCOL
 :: uncomment to following line in order to delete the CMakeCache.txt always if experiencing problems.
 REM IF EXIST "%DEPENDENCY_DIR%\%BUILD_DIR%\CMakeCache.txt". del "%DEPENDENCY_DIR%\%BUILD_DIR%\CMakeCache.txt"
 :: NOTE Enforce that the embedded LibXml2 and PCRE are used as there might be problems with arbitrary versions of the libraries.
+:: OpenCOLLADA is ancient at this point and allows cmake 2.6+, which results in error in cmake 4, so we override minimum cmake version.
 call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\%DEPENDENCY_INSTALL_NAME%" -DUSE_STATIC_MSVC_RUNTIME=0 -DCMAKE_DEBUG_POSTFIX=d ^
-               -DLIBXML2_LIBRARIES="" -DLIBXML2_INCLUDE_DIR="" -DPCRE_INCLUDE_DIR="" -DPCRE_LIBRARIES=""
+               -DLIBXML2_LIBRARIES="" -DLIBXML2_INCLUDE_DIR="" -DPCRE_INCLUDE_DIR="" -DPCRE_LIBRARIES="" ^
+               -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 REM IF NOT EXIST "%DEPS_DIR%\OpenCOLLADA\%BUILD_DIR%\lib\%DEBUG_OR_RELEASE%\OpenCOLLADASaxFrameworkLoader.lib".
-call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\OPENCOLLADA.sln" %DEBUG_OR_RELEASE%
+call :BuildCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %DEBUG_OR_RELEASE%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %DEBUG_OR_RELEASE%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -507,26 +537,6 @@ echo OCC_INSTALL_DIR=%DEPENDENCY_INSTALL_DIR%>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
 
 IF NOT DEFINED SKIP_INSTALLED_DEPS_CHECK call :CheckInstallation
 if %ERRORLEVEL%==200 GOTO %NEXT_DEPENDENCY_LABEL%
-
-
-:: OCCT has many dependencies but FreeType is the only mandatory
-set DEPENDENCY_NAME=FreeType
-set DEPENDENCY_DIR=%DEPS_DIR%\freetype-2.7.1
-set FREETYPE_ZIP=VER-2-7-1.zip
-cd "%DEPS_DIR%"
-call :DownloadFile https://github.com/freetype/freetype/archive/refs/tags/%FREETYPE_ZIP% "%DEPS_DIR%" %FREETYPE_ZIP%
-if not %ERRORLEVEL%==0 goto :Error
-call :ExtractArchive %FREETYPE_ZIP% "%DEPS_DIR%" "%DEPENDENCY_DIR%"
-if not %ERRORLEVEL%==0 goto :Error
-if exist "%DEPS_DIR%\freetype-VER-2-7-1" ren "%DEPS_DIR%\freetype-VER-2-7-1" "freetype-2.7.1"
-cd "%DEPENDENCY_DIR%"
-:: NOTE FreeType is built as a static library by default
-call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\freetype"
-if not %ERRORLEVEL%==0 goto :Error
-call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\freetype.sln" %BUILD_CFG%
-if not %ERRORLEVEL%==0 goto :Error
-call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
-if not %ERRORLEVEL%==0 goto :Error
 
 set DEPENDENCY_NAME=Open CASCADE %OCCT_VERSION%
 set DEPENDENCY_DIR=%DEPS_DIR%\occt_git
@@ -549,9 +559,18 @@ cd "%DEPENDENCY_DIR%"
 :: TODO: remove CMAKE_DEBUG_POSTFIX setting later.
 :: Temporarily explicitly set `CMAKE_DEBUG_POSTFIX` to empty to override it's perviously being set to `d`.
 :: OCCT don't need it, since it's layout is separating debug and release build by different folders.
+::
+:: OCCT 7.8.1 we're using is becoming old and it was targeting cmake 3.1+.
+::To make it buildable on cmake 4, we override policy version, but it may have some quirks in the future and we may consider version bump.
 call :RunCMake -DINSTALL_DIR="%DEPENDENCY_INSTALL_DIR%" -DBUILD_LIBRARY_TYPE="Static" -DCMAKE_DEBUG_POSTFIX="" ^
-    -DBUILD_MODULE_Draw=0 -D3RDPARTY_FREETYPE_DIR="%INSTALL_DIR%\freetype" ^
-    -DBUILD_USE_PCH=ON
+    -DBUILD_MODULE_Draw=0 ^
+    -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF ^
+    -DUSE_XLIB=OFF ^
+    -DUSE_FREETYPE=OFF ^
+    -DUSE_OPENGL=OFF ^
+    -DUSE_GLES2=OFF ^
+    -DBUILD_USE_PCH=ON ^
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 if not %ERRORLEVEL%==0 goto :Error
 
 :: whole program optimization avoids Visual C++ hanging when compiling 32-bit release OCCT up to version 7.4.0
@@ -561,7 +580,7 @@ IF %ARCH_BITS%==32 (
 	)
 )
 
-call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\OCCT.sln" %BUILD_CFG%
+call :BuildCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 if not %ERRORLEVEL%==0 goto :Error
 
 :: If `inc` is present in installation folder, then installation takes much longer
@@ -583,9 +602,10 @@ SET COMPILE_WITH_WPO=FALSE
 :Python
 set DEPENDENCY_NAME=Python %PYTHON_VERSION%
 set DEPENDENCY_DIR=N/A
-set PYTHON_AMD64_POSTFIX=-amd64
-IF NOT %TARGET_ARCH%==x64 set PYTHON_AMD64_POSTFIX=
-set PYTHON_INSTALLER=python-%PYTHON_VERSION%%PYTHON_AMD64_POSTFIX%.exe
+set PYTHON_AMD64_POSTFIX=
+IF /I "%TARGET_ARCH%"=="x64"   set "PYTHON_AMD64_POSTFIX=-amd64"
+IF /I "%TARGET_ARCH%"=="arm64" set "PYTHON_AMD64_POSTFIX=-arm64"
+set "PYTHON_INSTALLER=python-%PYTHON_VERSION%%PYTHON_AMD64_POSTFIX%.exe"
 
 IF NOT "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
     call cecho.cmd 0 13 "IFCOS_INSTALL_PYTHON not 'TRUE', skipping installation of Python."
@@ -593,7 +613,7 @@ IF NOT "%IFCOS_INSTALL_PYTHON%"=="TRUE" (
 )
 
 :: nuget doesn't support providing architecture for packages.
-if NOT %TARGET_ARCH%==x64 (
+IF /I NOT "%TARGET_ARCH%"=="x64" IF /I NOT "%TARGET_ARCH%"=="arm64" (
     call cecho.cmd 0 12 "Automatic insallation of Python for x86 builds is not supported,"
     call cecho.cmd 0 12 "please install Python %PYTHON_VERSION% manually and ensure that it is available in PATH."
     call cecho.cmd 0 12 "https://www.python.org/ftp/python/%PYTHON_VERSION%/%PYTHON_INSTALLER%"
@@ -606,13 +626,17 @@ if EXIST "%PYTHONHOME%" (
     goto :SWIG
 )
 
-"%NUGET_EXE%" install Python -Version %PYTHON_VERSION% -OutputDirectory "%DEPS_DIR%"
-IF NOT %ERRORLEVEL%==0 GOTO :Error
-
+IF /I "%TARGET_ARCH%"=="x64" (
+    "%NUGET_EXE%" install Python -Version %PYTHON_VERSION% -OutputDirectory "%DEPS_DIR%"
+    IF NOT %ERRORLEVEL%==0 GOTO :Error
+) ELSE (
+    "%NUGET_EXE%" install pythonarm64 -Version %PYTHON_VERSION% -OutputDirectory "%DEPS_DIR%"
+    IF NOT %ERRORLEVEL%==0 GOTO :Error
+)
 
 :SWIG
 set DEPENDENCY_NAME=SWIG
-set SWIG_VERSION=4.1.0
+set SWIG_VERSION=4.2.1
 set DEPENDENCY_DIR=%DEPS_DIR%\swig-%SWIG_VERSION%
 set DEPENDENCY_INSTALL_DIR=%INSTALL_DIR%\swig-%SWIG_VERSION%
 echo SWIG_INSTALL_DIR=%DEPENDENCY_INSTALL_DIR%>>"%~dp0\%BUILD_DEPS_CACHE_PATH%"
@@ -650,7 +674,7 @@ call :RunCMake -DCMAKE_INSTALL_PREFIX="%DEPENDENCY_INSTALL_DIR%" ^
                -DWITH_PCRE=OFF ^
                -DBISON_EXECUTABLE="%DEPS_DIR%\%WIN_FLEX_BISON%\win_bison.exe"
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\swig.sln" Release
+call :BuildCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" Release
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" Release
 IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -675,7 +699,7 @@ git apply --ignore-whitespace "%~dp0patches\cgal_no_zlib.patch"
 call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\cgal"    ^
                -DCGAL_HEADER_ONLY=On
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\CGAL.sln" %BUILD_CFG%
+call :BuildCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -715,7 +739,7 @@ IF NOT %ERRORLEVEL%==0 GOTO :Error
 cd "%DEPENDENCY_DIR%"\build\cmake
 call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\zstd" -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_SHARED=OFF
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-call :BuildSolution "%DEPENDENCY_DIR%\build\cmake\%BUILD_DIR%\zstd.sln" %BUILD_CFG%
+call :BuildCMakeProject "%DEPENDENCY_DIR%\build\cmake\%BUILD_DIR%" %BUILD_CFG%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 call :InstallCMakeProject "%DEPENDENCY_DIR%\build\cmake\%BUILD_DIR%" %BUILD_CFG%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -753,10 +777,13 @@ call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\%DEPENDENCY_INSTALL_NAME%" 
                -DWITH_CORE_TOOLS=OFF ^
                -DROCKSDB_BUILD_SHARED=OFF ^
                -DWITH_ZSTD=On ^
+               -DZSTD_INCLUDE_DIR="%ZSTD_INCLUDE%" ^
+               -DZSTD_LIBRARY_DEBUG="%ZSTD_LIB_DEBUG%" ^
+               -DZSTD_LIBRARY_RELEASE="%ZSTD_LIB_RELEASE%" ^
                -DPORTABLE=1 ^
                -DCMAKE_DEBUG_POSTFIX="_d"
 IF NOT %ERRORLEVEL%==0 GOTO :Error
-call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\rocksdb.sln" %BUILD_CFG%
+call :BuildCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -771,7 +798,7 @@ call :MarkInstallation
 :: call :RunCMake -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%\tbb"  ^
 ::                -DBUILD_SHARED_LIBS=Off
 :: IF NOT %ERRORLEVEL%==0 GOTO :Error
-:: call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\TBB.sln" %BUILD_CFG%
+:: call :BuildCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 :: IF NOT %ERRORLEVEL%==0 GOTO :Error
 :: call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 :: IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -795,7 +822,7 @@ call :MarkInstallation
 ::                -DPXR_BUILD_TESTS=FALSE                     ^
 ::                -DBUILD_SHARED_LIBS=Off                     ^
 :: IF NOT %ERRORLEVEL%==0 GOTO :Error
-:: call :BuildSolution "%DEPENDENCY_DIR%\%BUILD_DIR%\USD.sln" %BUILD_CFG%
+:: call :BuildCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 :: IF NOT %ERRORLEVEL%==0 GOTO :Error
 :: call :InstallCMakeProject "%DEPENDENCY_DIR%\%BUILD_DIR%" %BUILD_CFG%
 :: IF NOT %ERRORLEVEL%==0 GOTO :Error
@@ -841,76 +868,31 @@ exit /b %IFCOS_SCRIPT_RET%
 
 :: DownloadFile - Downloads a file using PowerShell
 :: Params: %1 url, %2 destinationDir, %3 filename
+:: Required vars:
+:: - DEPENDENCY_NAME
 :DownloadFile
-mkdir "%2"
-pushd "%2"
-if not exist "%~3". (
-    call cecho.cmd 0 13 "Downloading %DEPENDENCY_NAME% into %~2."
-    powershell -Command "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; $webClient = new-object System.Net.WebClient; $webClient.Proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials; $webClient.DownloadFile('%1', '%3')"
-    REM Old wget version in case someone has problem with PowerShell: wget --no-check-certificate %1
-) else (
-    call cecho.cmd 0 13 "%DEPENDENCY_NAME% already downloaded. Skipping."
-)
-set RET=%ERRORLEVEL%
-set LAST_ACTION=DownloadFile '%DEPENDENCY_NAME%'.
-popd
-exit /b %RET%
+%PWSH_TOOLS% download_file "%DEPENDENCY_NAME%" "%1" "%2" "%3"
+IF NOT %ERRORLEVEL%==0 GOTO :Error
+exit /b 0
 
 :: ExtractArchive - Extracts an archive file using 7-zip
 :: Params: %1 filename, %2 destinationDir, %3 dirAfterExtraction
+:: Required vars:
+:: - DEPENDENCY_NAME
 :ExtractArchive
-if not exist "%~3". (
-    call cecho.cmd 0 13 "Extracting %DEPENDENCY_NAME% into %~2 from %1"
-    7za x %1 -y -o%2 > nul
-) else (
-    call cecho.cmd 0 13 "%DEPENDENCY_NAME% already extracted into %~3. Skipping."
-)
-set RET=%ERRORLEVEL%
-set LAST_ACTION=ExtractArchive '%DEPENDENCY_NAME%'.
-exit /b %RET%
-
-:: GitCloneOrPullRepository - Clones or pulls (if repository already cloned) a Git repository
-:: Params: %1 gitUrl, %2 destDir
-:: F.ex. call :GitCloneRepository https://github.com/KhronosGroup/OpenCOLLADA.git "%DEPS_DIR%\OpenCOLLADA\"
-:GitCloneOrPullRepository
-if not exist "%~2". (
-    call cecho.cmd 0 13 "Cloning %DEPENDENCY_NAME% into %~2."
-    pushd "%DEPS_DIR%"
-    call git clone %1 %2
-    set RET=!ERRORLEVEL!
-) else (
-    call cecho.cmd 0 13 "%DEPENDENCY_NAME% already cloned. Pulling latest changes."
-    git reset --hard
-    pushd %2
-    call git pull
-    set RET=0
-)
-popd
-exit /b %RET%
+%PWSH_TOOLS% extract_file "%DEPENDENCY_NAME%" "%1" "%2" "%3"
+IF NOT %ERRORLEVEL%==0 GOTO :Error
+exit /b 0
 
 :: GitCloneAndCheckoutRevision - Clones a Git repository and checks out a specific revision or tag
 :: Params: %1 gitUrl, %2 destDir, %3 revision
 :: F.ex. call :GitCloneAndCheckoutRevision https://github.com/KhronosGroup/OpenCOLLADA.git "%DEPENDENCY_DIR%" 064a60b65c2c31b94f013820856bc84fb1937cc6
+:: Required vars:
+:: - DEPENDENCY_NAME
 :GitCloneAndCheckoutRevision
-if not exist "%~2". (
-    call cecho.cmd 0 13 "Cloning %DEPENDENCY_NAME% into %~2."
-    pushd "%DEPS_DIR%"
-    call git clone %1 %2
-    set RET=!ERRORLEVEL!
-    if not "!RET!"=="0" exit /b !RET!
-    popd
-) else (
-    call cecho.cmd 0 13 "%DEPENDENCY_NAME% already cloned."
-    set RET=0
-)
-pushd "%2"
-call git fetch
-call cecho.cmd 0 13 "Checking out %DEPENDENCY_NAME% revision %3."
-call git reset --hard
-call git checkout %3
-set RET=%ERRORLEVEL%
-popd
-exit /b %RET%
+%PWSH_TOOLS% git_clone_and_checkout_revision "%DEPENDENCY_NAME%" "%1" "%2" "%3"
+IF NOT %ERRORLEVEL%==0 GOTO :Error
+exit /b 0
 
 :: RunCMake - Runs CMake for a CMake-based project
 :: Params: %* cmakeOptions
@@ -924,20 +906,36 @@ pushd %BUILD_DIR%
 :: cache always e.g. when we've had new changes in the repository.
 IF %BUILD_TYPE%==Rebuild IF EXIST CMakeCache.txt. del CMakeCache.txt
 
+set VS_TOOLSET_CMAKE_ARG=
 IF NOT "%VS_TOOLSET_HOST%"=="" (
-    cmake .. -G %GENERATOR% -A %VS_PLATFORM% -T %VS_TOOLSET_HOST% %*
-) ELSE (
-    cmake .. -G %GENERATOR% -A %VS_PLATFORM% %*
+    set VS_TOOLSET_CMAKE_ARG=-T %VS_TOOLSET_HOST%
 )
-
+set COMMAND=cmake .. -G %GENERATOR% -A %VS_PLATFORM% %VS_TOOLSET_CMAKE_ARG% %*
+echo %COMMAND%
+%COMMAND%
 set RET=%ERRORLEVEL%
 popd
 exit /b %RET%
 
-:: TODO add BuildCMakeProject which utilizes cmake --build
+:: Params: %1 buildDir, %2 configuration
+:: Required vars:
+:: - DEPENDENCY_NAME
+:BuildCMakeProject
+pushd %1
+call cecho.cmd 0 13 "Building %DEPENDENCY_NAME%. Please be patient, this will take a while."
+set COMPILE_WITH_WPO_SETTING=
+IF NOT %COMPILE_WITH_WPO%==FALSE (
+    set COMPILE_WITH_WPO_SETTING=;WholeProgramOptimization=TRUE
+)
+set COMMAND=cmake --build . --config %2 -- %MSBUILD_MULTIPROC%
+echo %COMMAND%
+%COMMAND%
+set RET=%ERRORLEVEL%
+popd
+exit /b %RET%
 
 :: BuildSolution - Builds/Rebuilds/Cleans a solution using MSBuild
-:: Params: %1 solutioName, %2 configuration
+:: Params: %1 solutionName, %2 configuration
 :BuildSolution
 IF [%~3]==[] (
     set TARGET=%BUILD_TYPE%
@@ -959,23 +957,13 @@ IF NOT %COMPILE_WITH_WPO%==FALSE (
 %MSBUILD_CMD% %1 /p:configuration=%2;platform=%VS_PLATFORM%%COMPILE_WITH_WPO_SETTING% /t:"%TARGET%"
 exit /b %ERRORLEVEL%
 
-:: InstallCMakeProject - Builds the INSTALL project of CMake-based project
-:: Params: %1 buildDir, %2 == configuration
-:: NOTE the actual install dir is set during cmake run.
-:: TODO Utilize cmake --build --target INSTALL
+:: Params: %1 buildDir, %2 configuration
+:: Required vars:
+:: - DEPENDENCY_NAME
 :InstallCMakeProject
-pushd %1
-call cecho.cmd 0 13 "Installing %2 %DEPENDENCY_NAME%. Please be patient, this will take a while."
-
-:: whole program optimization avoids Visual C++ hanging when compiling 32-bit release OCCT up to version 7.4.0
-set COMPILE_WITH_WPO_SETTING=
-IF NOT %COMPILE_WITH_WPO%==FALSE (
-    set COMPILE_WITH_WPO_SETTING=;WholeProgramOptimization=TRUE
-)
-%MSBUILD_CMD% INSTALL.%VCPROJ_FILE_EXT% /p:configuration=%2;platform=%VS_PLATFORM%%COMPILE_WITH_WPO_SETTING%
-set RET=%ERRORLEVEL%
-popd
-exit /b %RET%
+%PWSH_TOOLS% install_cmake_project "%DEPENDENCY_NAME%" "%1" "%2"
+IF NOT %ERRORLEVEL%==0 GOTO :Error
+exit /b 0
 
 :: Checks whether a dependency is already installed for the specified config
 :: Doesn't work for dependencies, only for those that need separate Debug/Release installs.
@@ -1004,6 +992,15 @@ exit /b 0
 IF NOT %ERRORLEVEL%==0 GOTO :Error
 exit /b 0
 
+:: Params:
+:: - %1 - VC_VER
+:: - %2 - DEPS_DIR
+:: - %3 - BOOST_ROOT
+:check_boost_vc145_compatibility
+%PWSH_TOOLS% check_boost_vc145_compatibility "%1" "%2" "%3"
+IF NOT %ERRORLEVEL%==0 GOTO :Error
+exit /b 0
+
 :: PrintUsage - Prints usage information
 :PrintUsage
 call "%~dp0\utils\cecho.cmd" 0 10 "Requirements for a successful execution:"
@@ -1020,4 +1017,3 @@ echo   - https://msdn.microsoft.com/en-us/library/ms229859(v=vs.110).aspx
 echo.
 echo NB: This script needs to be ran from the directory directly containing it.
 echo.
-
