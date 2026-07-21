@@ -2888,6 +2888,50 @@ class Drawing(bonsai.core.tool.Drawing):
         return sheet_references
 
     @classmethod
+    def get_sheeted_drawing_ids(cls) -> set[int]:
+        """Get the IFC ids of all drawings that are placed on at least one sheet."""
+        ifc_file = tool.Ifc.get()
+        sheet_locations: set[Union[str, None]] = set()
+        for sheet in ifc_file.by_type("IfcDocumentInformation"):
+            if sheet.Scope != "SHEET":
+                continue
+            for reference in cls.get_document_references(sheet):
+                sheet_locations.add(reference.Location)
+        if not sheet_locations:
+            return set()
+        result: set[int] = set()
+        for drawing in ifc_file.by_type("IfcAnnotation"):
+            if drawing.ObjectType != "DRAWING":
+                continue
+            drawing_document = cls.get_drawing_document(drawing)
+            if drawing_document and drawing_document.Location in sheet_locations:
+                result.add(drawing.id())
+        return result
+
+    @classmethod
+    def get_visible_drawings_in_category(cls, target_view: str) -> list[DrawingProperties]:
+        """Get the drawing items in a target view category that are currently visible in the drawing list.
+
+        Grouping is positional: individual drawing items don't carry their own ``target_view``, they belong to
+        the most recent header item above them. Only expanded categories contribute drawing items to the
+        collection, so a collapsed category yields an empty list. Respects the ``show_drawings_on_sheets_only``
+        filter so that select-all only affects visible drawings.
+        """
+        props = cls.get_document_props()
+        drawings: list[DrawingProperties] = []
+        in_category = False
+        for item in props.drawings:
+            if not item.is_drawing:
+                # Header row: we're inside the requested category until the next header.
+                in_category = item.target_view == target_view
+            elif in_category:
+                drawings.append(item)
+        if props.show_drawings_on_sheets_only:
+            sheeted_ids = cls.get_sheeted_drawing_ids()
+            drawings = [d for d in drawings if d.ifc_definition_id in sheeted_ids]
+        return drawings
+
+    @classmethod
     def get_camera_matrix(cls, camera: bpy.types.Object) -> Matrix:
         matrix_world = camera.matrix_world.copy().normalized()
         location, rotation, scale = matrix_world.decompose()

@@ -2310,7 +2310,11 @@ class SelectAllDrawings(bpy.types.Operator):
 
     def execute(self, context):
         props = tool.Drawing.get_document_props()
+        # When filtering to sheeted drawings only, act on the visible drawings only.
+        sheeted_ids = tool.Drawing.get_sheeted_drawing_ids() if props.show_drawings_on_sheets_only else None
         for drawing in props.drawings:
+            if sheeted_ids is not None and drawing.is_drawing and drawing.ifc_definition_id not in sheeted_ids:
+                continue
             if drawing.is_selected != self.select_all:
                 drawing.is_selected = self.select_all
         return {"FINISHED"}
@@ -3867,6 +3871,26 @@ class ToggleTargetView(bpy.types.Operator):
             if self.toggle_all or drawing.target_view == self.target_view:
                 drawing.is_expanded = expanded
         core.load_drawings(tool.Drawing)
+        return {"FINISHED"}
+
+
+class ToggleDrawingCategorySelection(bpy.types.Operator):
+    bl_idname = "bim.toggle_drawing_category_selection"
+    bl_label = "Toggle Category Selection"
+    bl_description = "Select or deselect all drawings in this view category"
+    bl_options = {"REGISTER", "UNDO"}
+
+    target_view: bpy.props.StringProperty()
+
+    if TYPE_CHECKING:
+        target_view: str
+
+    def execute(self, context):
+        drawings = tool.Drawing.get_visible_drawings_in_category(self.target_view)
+        # If everything visible in the category is already selected, deselect all; otherwise select all.
+        new_state = not all(d.is_selected for d in drawings)
+        for drawing in drawings:
+            drawing.is_selected = new_state
         return {"FINISHED"}
 
 
