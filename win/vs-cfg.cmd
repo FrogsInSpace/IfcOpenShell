@@ -79,6 +79,10 @@ echo(!GEN_SHORTHAND! | findstr /c:"-v140_xp" >nul && ( set "VS_TOOLSET=v140_xp" 
 echo(!GEN_SHORTHAND! | findstr /c:"-v141"    >nul && ( set "VS_TOOLSET=v141" )    && ( set "BOOST_TOOLSET=14.1" )
 echo(!GEN_SHORTHAND! | findstr /c:"-v141_xp" >nul && ( set "VS_TOOLSET=v141_xp" ) && ( set "BOOST_TOOLSET=14.1" )
 echo(!GEN_SHORTHAND! | findstr /c:"-v142"    >nul && ( set "VS_TOOLSET=v142" )    && ( set "BOOST_TOOLSET=14.2" )
+echo(!GEN_SHORTHAND! | findstr /c:"-v143"    >nul && ( set "VS_TOOLSET=v143" )    && ( set "BOOST_TOOLSET=14.3" )
+echo(!GEN_SHORTHAND! | findstr /c:"-v144"    >nul && ( set "VS_TOOLSET=v144" )    && ( set "BOOST_TOOLSET=14.4" )
+echo(!GEN_SHORTHAND! | findstr /c:"-v145"    >nul && ( set "VS_TOOLSET=v145" )    && ( set "BOOST_TOOLSET=14.5" )
+
 
 SET VS_VER=%GEN_SHORTHAND:~0,4%
 
@@ -177,7 +181,7 @@ set VS_TOOLSET_HOST=
 :: determine the toolset and winapi for Boost b2
 :: optionally use 64bit toolset to work around memory errors when linking
 IF DEFINED VS_TOOLSET (
-    set BOOST_TOOLSET=msvc-%BOOST_TOOLSET%
+    set BOOST_TOOLSET=msvc-%VC_VER%
     if "!VS_TOOLSET:~-3!"=="_xp" (
         set BOOST_WIN_API=define=BOOST_USE_WINAPI_VERSION=0x0501
     )

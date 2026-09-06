@@ -98,12 +98,14 @@ set LIBXML2_INCLUDE_DIR=%DEPS_DIR%\OpenCOLLADA\Externals\LibXML\include
 set LIBXML2_LIBRARIES=%INSTALL_DIR%\OpenCOLLADA\lib\opencollada\xml.lib
 set HDF5_INSTALL_DIR=%INSTALL_DIR%\HDF5-%HDF5_VERSION%-win%ARCH_BITS%
 
-set PYTHON_EXECUTABLE=%PYTHONHOME%\python.exe
-for /f "usebackq delims=" %%v in (`
-    call "%PYTHON_EXECUTABLE%" -c "import sys; print(f'{sys.version_info[0]}{sys.version_info[1]}')"
-`) do set "PY_VER_MAJOR_MINOR=%%v"
-set PYTHON_INCLUDE_DIR=%PYTHONHOME%\include
-set PYTHON_LIBRARY=%PYTHONHOME%\libs\python%PY_VER_MAJOR_MINOR%.lib
+if defined PYTHONHOME (
+	set PYTHON_EXECUTABLE=%PYTHONHOME%\python.exe
+	for /f "usebackq delims=" %%v in (`
+		call "%PYTHON_EXECUTABLE%" -c "import sys; print(f'{sys.version_info[0]}{sys.version_info[1]}')"
+	`) do set "PY_VER_MAJOR_MINOR=%%v"
+	set PYTHON_INCLUDE_DIR=%PYTHONHOME%\include
+	set PYTHON_LIBRARY=%PYTHONHOME%\libs\python%PY_VER_MAJOR_MINOR%.lib
+)
 
 :: `swigwin` is a legacy installation folder name, before we started using versioned folders.
 :: we can remove it later.
