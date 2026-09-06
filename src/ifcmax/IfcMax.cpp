@@ -26,9 +26,6 @@
 #include <splshape.h>
 #include <hold.h>
 
-// should fix a iterator missallignment assertion ?
-#define IFOPSH_WITH_ROCKSDB
-
 #include "../ifcgeom/Iterator.h"
 #include "../ifcgeom/taxonomy.h"
 #include "../ifcgeom/ConversionSettings.h"
