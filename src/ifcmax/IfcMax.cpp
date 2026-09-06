@@ -344,9 +344,10 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
     auto annotations = file.instances_by_type("IfcAnnotation");
     auto solids = file.instances_by_type("IfcSolidModel");
 
-	// cgal kernels produce std::vector incompatiblities
-	// TODO: cgal kernels produce std::vector incompatibilities -> 3ds Max asserts crashes 
-	// ifcopenshell::geometry::kernels::construct(&ifc_file, KernelName.at(Kernel::HybridCGALSimpleOCC), settings),
+	// TODO: cgal kernels produce invalid vector asserts in cgal_conversion_result.cpp->Triangulate(), due to auto-constructed iterators 
+	// This happens on specific geometry with border-halfedges
+	
+	// valid kernels: "opencascade", "cgal", "cgal-simple", "hybrid-cgal-simple-opencascade"
 	IfcGeom::Iterator iterator(ifcopenshell::geometry::kernels::construct(&file, "opencascade", settings), settings, &file);
 
 
