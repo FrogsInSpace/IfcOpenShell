@@ -341,12 +341,8 @@ int IFCImp::DoImport(const TCHAR *file_name, ImpInterface *impitfc, Interface *i
     auto annotations = file.instances_by_type("IfcAnnotation");
     auto solids = file.instances_by_type("IfcSolidModel");
 
-	// TODO: cgal kernels produce invalid vector asserts in cgal_conversion_result.cpp->Triangulate(), due to auto-constructed iterators 
-	// This happens on specific geometry with border-halfedges
-	
 	// valid kernels: "opencascade", "cgal", "cgal-simple", "hybrid-cgal-simple-opencascade"
-	IfcGeom::Iterator iterator(ifcopenshell::geometry::kernels::construct(&file, "opencascade", settings), settings, &file);
-
+	IfcGeom::Iterator iterator(ifcopenshell::geometry::kernels::construct(&file, "hybrid-cgal-simple-opencascade", settings), settings, &file);
 
     delete[] fn_mb;
 
