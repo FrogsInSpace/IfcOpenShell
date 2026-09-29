@@ -11,7 +11,7 @@
 :: but WITHOUT ANY WARRANTY; without even the implied warranty of              ::
 :: MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the                ::
 :: Lesser GNU General Public License for more details.                         ::
-::                                                                           Rebuild ::
+::                                                                             ::
 :: You should have received a copy of the Lesser GNU General Public License    ::
 :: along with this program. If not, see <http://www.gnu.org/licenses/>.        ::
 ::                                                                             ::
@@ -88,8 +88,6 @@ IF NOT "!BUILD_TYPE!"=="Build" IF NOT "!BUILD_TYPE!"=="Rebuild" IF NOT "!BUILD_T
 IF NOT EXIST "%DEPS_DIR%". mkdir "%DEPS_DIR%"
 IF NOT EXIST "%INSTALL_DIR%". mkdir "%INSTALL_DIR%"
 
-:: If we use VS2008, framework path (for MSBuild) may not be correctly set. Manually attempt to add in that case
-IF %VS_VER%==2008 set PATH=C:\Windows\Microsoft.NET\Framework\v3.5;%PATH%
 
 :: User-configurable build options
 IF NOT DEFINED IFCOS_INSTALL_PYTHON set IFCOS_INSTALL_PYTHON=FALSE
@@ -118,8 +116,8 @@ set PWSH_TOOLS=powershell -NonInteractive -File %SCRIPT_DIR%\utils\tools.ps1
 cmake --version | findstr version > temp.txt
 set /p CMAKE_VERSION=<temp.txt
 del temp.txt
-if "%CMAKE_VERSION%" LSS "cmake version 3.11.4" (
-    echo "CMake v3.11.4 or higher is required"
+if "%CMAKE_VERSION%" LSS "cmake version 3.21.0" (
+    echo "CMake v3.21.0 or higher is required"
     goto :ErrorAndPrintUsage
 )
 
@@ -198,7 +196,7 @@ echo.
 cd "%DEPS_DIR%"
 
 :: VERSIONS
-REM set OCCT_VERSION=7.8.1
+set OCCT_VERSION=%OCCT_VERSION%
 IF DEFINED QT6_VERSION (
     echo Using overridden QT6_VERSION: '%QT6_VERSION%'
 ) else (
